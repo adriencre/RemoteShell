@@ -1,0 +1,20 @@
+# Configuration de l'agent RemoteShell
+# Copiez ce fichier vers /etc/remoteshell/agent.conf et modifiez les valeurs
+
+# URL du serveur RemoteShell (avec le port)
+SERVER_URL=10.0.0.59:8081
+
+# ID unique de l'agent (identifiant de la machine)
+AGENT_ID=serveur-impression-01
+
+# Nom convivial de l'agent (affiché dans l'interface)
+AGENT_NAME="Serveur d'impression principal"
+
+# Token d'authentification (fourni par l'administrateur)
+AUTH_TOKEN=test-token
+
+# Options avancées (optionnelles)
+# HEARTBEAT_INTERVAL=30s
+# RECONNECT_DELAY=10s
+# CHUNK_SIZE=65536
+

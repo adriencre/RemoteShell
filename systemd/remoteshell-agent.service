@@ -1,0 +1,30 @@
+[Unit]
+Description=RemoteShell Agent
+Documentation=https://github.com/votre-projet/remoteshell
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/remoteshell
+ExecStart=/usr/local/bin/remoteshell-agent --server %SERVER_URL% --id %AGENT_ID% --name "%AGENT_NAME%" --token %AUTH_TOKEN%
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Sécurité
+NoNewPrivileges=false
+PrivateTmp=false
+
+# Limites de ressources
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Variables d'environnement
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+
