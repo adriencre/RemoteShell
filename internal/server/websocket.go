@@ -80,7 +80,17 @@ func (ws *WebSocketServer) handleConnection(conn WebSocketConn) {
 		// Parser le message
 		msg, err := common.FromJSON(message)
 		if err != nil {
-			log.Printf("Erreur de parsing du message: %v", err)
+			// Ignorer les erreurs de parsing pour les messages vides ou invalides (déconnexions, etc.)
+			if len(message) == 0 {
+				log.Printf("Message vide reçu (probable déconnexion), ignoré")
+				break
+			}
+			// Afficher un aperçu du message (max 100 caractères) pour le débogage
+			msgPreview := string(message)
+			if len(msgPreview) > 100 {
+				msgPreview = msgPreview[:100] + "..."
+			}
+			log.Printf("Erreur de parsing du message: %v (aperçu: %q)", err, msgPreview)
 			continue
 		}
 
@@ -168,6 +178,10 @@ func (ws *WebSocketServer) handleMessage(conn WebSocketConn, msg *common.Message
 
 	case common.MessageTypeLogContent:
 		return ws.handleLogContent(conn, msg, agent)
+
+	// Messages d'erreur
+	case common.MessageTypeError:
+		return ws.handleError(conn, msg, agent)
 
 	default:
 		log.Printf("Type de message non géré: %s", msg.Type)
@@ -320,36 +334,118 @@ func (ws *WebSocketServer) handleFileList(conn WebSocketConn, msg *common.Messag
 		return ws.sendError(conn, "non authentifié")
 	}
 
-	// Si c'est une réponse d'un agent avec des données de fichiers
-	if files, ok := msg.Data.([]*common.FileData); ok {
+	log.Printf("[WS] handleFileList - Message reçu, ID: %s, Type de données: %T", msg.ID, msg.Data)
 
-		// Extraire le chemin depuis les données
-		var path string
-		if len(files) > 0 {
-			// Prendre le chemin du premier fichier et enlever le nom du fichier
-			path = files[0].Path
-			if lastSlash := strings.LastIndex(path, "/"); lastSlash > 0 {
-				path = path[:lastSlash]
-			} else if path == "/" {
-				// Si c'est la racine, garder "/"
-				path = "/"
-			} else {
-				path = "."
+	// Si c'est une réponse d'un agent avec des données de fichiers
+	// Gérer []*common.FileData et []interface{} (après sérialisation JSON)
+	var files []*common.FileData
+	var filesOk bool
+	
+	if filesData, ok := msg.Data.([]*common.FileData); ok {
+		files = filesData
+		filesOk = true
+	} else if filesInterface, ok := msg.Data.([]interface{}); ok {
+		// Convertir []interface{} en []*common.FileData
+		files = make([]*common.FileData, 0, len(filesInterface))
+		for _, item := range filesInterface {
+			if fileMap, ok := item.(map[string]interface{}); ok {
+				fileData := &common.FileData{}
+				if pathVal, exists := fileMap["path"]; exists {
+					if pathStr, ok := pathVal.(string); ok {
+						fileData.Path = pathStr
+					}
+				}
+				if isDir, exists := fileMap["is_dir"]; exists {
+					if isDirBool, ok := isDir.(bool); ok {
+						fileData.IsDir = isDirBool
+					}
+				}
+				if size, exists := fileMap["size"]; exists {
+					if sizeFloat, ok := size.(float64); ok {
+						fileData.Size = int64(sizeFloat)
+					}
+				}
+				if mode, exists := fileMap["mode"]; exists {
+					if modeFloat, ok := mode.(float64); ok {
+						fileData.Mode = uint32(modeFloat)
+					}
+				}
+				if modified, exists := fileMap["modified"]; exists {
+					if modifiedStr, ok := modified.(string); ok {
+						if modifiedTime, err := time.Parse(time.RFC3339, modifiedStr); err == nil {
+							fileData.Modified = modifiedTime
+						}
+					}
+				}
+				files = append(files, fileData)
 			}
 		}
+		filesOk = true
+	}
+	
+	if filesOk && len(files) > 0 {
+		// Extraire le chemin depuis les données
+		// Pour les fichiers à la racine, les chemins seront comme "/bin", "/usr", etc.
+		// Pour les sous-répertoires, ils seront comme "/home/user", "/var/log", etc.
+		var path string
+		if len(files) > 0 {
+			firstPath := files[0].Path
+			// Si le chemin commence par "/" et n'a qu'un seul "/" (ex: "/bin", "/usr")
+			// ou s'il a exactement "/", c'est la racine
+			if firstPath == "/" {
+				path = "/"
+			} else if strings.HasPrefix(firstPath, "/") {
+				// Compter le nombre de "/" dans le chemin
+				slashCount := strings.Count(firstPath, "/")
+				if slashCount == 1 {
+					// Un seul "/", c'est un fichier/répertoire à la racine
+					path = "/"
+				} else {
+					// Plusieurs "/", prendre le chemin parent
+					lastSlash := strings.LastIndex(firstPath, "/")
+					if lastSlash > 0 {
+						path = firstPath[:lastSlash]
+						// Normaliser: si on obtient une chaîne vide, c'est la racine
+						if path == "" {
+							path = "/"
+						}
+					} else {
+						path = "/"
+					}
+				}
+			} else {
+				// Chemin relatif, essayer d'extraire le répertoire parent
+				lastSlash := strings.LastIndex(firstPath, "/")
+				if lastSlash > 0 {
+					path = firstPath[:lastSlash]
+				} else {
+					path = "."
+				}
+			}
+		} else {
+			path = "/"
+		}
+
+		log.Printf("[WS] handleFileList - Chemin détecté: %s pour %d fichiers", path, len(files))
 
 		// Mettre à jour le cache de fichiers
 		(*agent).UpdateFileCache(path, files)
 
 		// Si le message a un ID, c'est une réponse à une demande
 		if msg.ID != "" {
+			log.Printf("[WS] handleFileList - Envoi de la réponse au canal, ID: %s", msg.ID)
 			(*agent).HandleResponse(msg)
+		} else {
+			log.Printf("[WS] handleFileList - Message sans ID, pas de réponse attendue")
 		}
 
 		return nil
 	} else if _, ok := msg.Data.(*common.FileData); ok {
-
 		// C'est une demande de liste, transférer à l'agent
+		(*agent).UpdateLastSeen()
+		return (*agent).SendMessage(msg)
+	} else if _, ok := msg.Data.(map[string]interface{}); ok {
+		// C'est peut-être une demande avec le chemin dans une map
 		(*agent).UpdateLastSeen()
 		return (*agent).SendMessage(msg)
 	}
@@ -569,6 +665,32 @@ func (ws *WebSocketServer) handleLogContent(conn WebSocketConn, msg *common.Mess
 		}
 		log.Printf("[WS] handleLogContent - Envoi de la réponse au canal")
 		(*agent).HandleResponse(msg)
+	}
+
+	(*agent).UpdateLastSeen()
+	return nil
+}
+
+// handleError traite les messages d'erreur de l'agent
+func (ws *WebSocketServer) handleError(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		// Si ce n'est pas un agent, ignorer
+		return nil
+	}
+
+	// Si le message a un ID, c'est probablement une réponse à une requête
+	if msg.ID != "" {
+		(*agent).HandleResponse(msg)
+	} else {
+		// Sinon, transférer l'erreur aux clients web
+		resultMsg := &common.Message{
+			Type:      "error",
+			ID:        msg.ID,
+			Data:      msg.Data,
+			Timestamp: msg.Timestamp,
+			AgentID:   (*agent).ID,
+		}
+		ws.hub.BroadcastToWebClients(resultMsg)
 	}
 
 	(*agent).UpdateLastSeen()

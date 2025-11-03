@@ -10,7 +10,8 @@ import {
   FolderOpen,
   RefreshCw,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  ArrowRight
 } from 'lucide-react'
 
 interface Agent {
@@ -176,8 +177,17 @@ const Dashboard: React.FC = () => {
 
       {/* Agents List */}
       <div className="card">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-medium text-gray-900">Serveurs d'impression</h2>
+          {agents.length > 0 && (
+            <Link
+              to="/agents"
+              className="btn btn-secondary btn-sm"
+            >
+              Voir tous les agents
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Link>
+          )}
         </div>
         
         {agents.length === 0 ? (
@@ -201,9 +211,12 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                          <Link 
+                            to={`/agent/${agent.id}`}
+                            className="text-sm font-medium text-gray-900 truncate hover:text-primary-600 transition-colors"
+                          >
                             {agent.name}
-                          </h3>
+                          </Link>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             agent.active 
                               ? 'bg-green-100 text-green-800' 

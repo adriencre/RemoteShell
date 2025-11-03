@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ type Client struct {
 	connected      bool
 	reconnect      bool
 	stopChan       chan struct{}
+	disconnectChan chan struct{}
 	messageChan    chan *common.Message
 	mu             sync.RWMutex
 	agentID        string
@@ -69,6 +71,7 @@ func NewClient(config *common.Config, tokenManager *auth.TokenManager) *Client {
 		connected:      false,
 		reconnect:      true,
 		stopChan:       make(chan struct{}),
+		disconnectChan:  make(chan struct{}, 1),
 		messageChan:    make(chan *common.Message, 100),
 		agentID:        agentID,
 		agentName:      agentName,
@@ -106,8 +109,17 @@ func (c *Client) Start() error {
 		go c.sendHeartbeat()
 		go c.sendPrinterStatus()
 
-		// Attendre la déconnexion
-		<-c.stopChan
+		// Attendre la déconnexion ou l'arrêt
+		select {
+		case <-c.stopChan:
+			// Arrêt demandé
+			return nil
+		case <-c.disconnectChan:
+			// Déconnexion inattendue, relancer la reconnexion
+			log.Println("Déconnexion détectée, reconnexion automatique...")
+			// Recréer le canal pour la prochaine déconnexion
+			c.disconnectChan = make(chan struct{}, 1)
+		}
 	}
 
 	return nil
@@ -232,6 +244,11 @@ func (c *Client) handleMessages() {
 		if err != nil {
 			log.Printf("Erreur de lecture WebSocket: %v", err)
 			c.disconnect()
+			// Signaler la déconnexion pour relancer la reconnexion
+			select {
+			case c.disconnectChan <- struct{}{}:
+			default:
+			}
 			break
 		}
 
@@ -435,6 +452,9 @@ func (c *Client) handleFileDownload(msg *common.Message) error {
 
 // handleFileList traite la demande de liste de fichiers
 func (c *Client) handleFileList(msg *common.Message) error {
+	log.Printf("[AGENT] handleFileList - Début du traitement, ID: %s", msg.ID)
+	log.Printf("[AGENT] handleFileList - Type de données: %T", msg.Data)
+	
 	var path string
 
 	// Gérer les différents types de données
@@ -450,76 +470,84 @@ func (c *Client) handleFileList(msg *common.Message) error {
 	case string:
 		path = data
 	case []interface{}:
-		// Le serveur envoie parfois une liste de fichiers existants
-
-		// Convertir les maps en FileData
-		var files []*common.FileData
-		for _, item := range data {
-			if fileMap, ok := item.(map[string]interface{}); ok {
-				fileData := &common.FileData{}
-
-				if path, exists := fileMap["path"]; exists {
-					if pathStr, ok := path.(string); ok {
-						fileData.Path = pathStr
-					}
-				}
-
-				if isDir, exists := fileMap["is_dir"]; exists {
-					if isDirBool, ok := isDir.(bool); ok {
-						fileData.IsDir = isDirBool
-					}
-				}
-
-				if size, exists := fileMap["size"]; exists {
-					if sizeFloat, ok := size.(float64); ok {
-						fileData.Size = int64(sizeFloat)
-					}
-				}
-
-				if mode, exists := fileMap["mode"]; exists {
-					if modeFloat, ok := mode.(float64); ok {
-						fileData.Mode = uint32(modeFloat)
-					}
-				}
-
-				if modified, exists := fileMap["modified"]; exists {
-					if modifiedStr, ok := modified.(string); ok {
-						if modifiedTime, err := time.Parse(time.RFC3339, modifiedStr); err == nil {
-							fileData.Modified = modifiedTime
+		// Le serveur envoie parfois une liste de fichiers (réponse) mais pas de demande
+		// Si on reçoit []interface{} comme demande, c'est une erreur de format
+		log.Printf("[AGENT] handleFileList - Reçu []interface{} avec %d éléments (cas non attendu pour une demande)", len(data))
+		
+		// Si c'est une liste vide, traiter comme une demande pour la racine
+		if len(data) == 0 {
+			log.Printf("[AGENT] handleFileList - Liste vide, traitement comme demande de liste pour chemin racine")
+			path = "/"
+			goto listFiles
+		}
+		
+		// Sinon, c'est probablement une erreur de sérialisation
+		// Essayer d'extraire un chemin si possible depuis le premier élément
+		if len(data) > 0 {
+			if firstItem, ok := data[0].(map[string]interface{}); ok {
+				if pathValue, exists := firstItem["path"]; exists {
+					if pathStr, ok := pathValue.(string); ok {
+						// C'est peut-être une réponse mal formatée, mais on peut essayer
+						log.Printf("[AGENT] handleFileList - Élément trouvé avec path: %s, utilisation comme chemin parent", pathStr)
+						// Extraire le répertoire parent
+						if strings.HasPrefix(pathStr, "/") && pathStr != "/" {
+							lastSlash := strings.LastIndex(pathStr, "/")
+							if lastSlash > 0 {
+								path = pathStr[:lastSlash]
+							} else {
+								path = "/"
+							}
+						} else {
+							path = "/"
 						}
+						goto listFiles
 					}
 				}
-
-				files = append(files, fileData)
 			}
 		}
-		responseMsg := common.NewMessageWithID(common.MessageTypeFileList, msg.ID, files)
-		responseMsg.AgentID = c.agentID
-		return c.sendMessage(responseMsg)
+		
+		// Si on arrive ici, on ne peut pas traiter cette liste comme une demande
+		log.Printf("[AGENT] handleFileList - Format []interface{} non traitable comme demande, retour d'erreur")
+		return fmt.Errorf("format de données invalide pour une demande: []interface{} avec %d éléments", len(data))
 	default:
 		return fmt.Errorf("format de données de fichier invalide: %T", msg.Data)
 	}
 
 	if path == "" {
-		// Utiliser le répertoire courant par défaut
-		path = "."
+		// Utiliser le répertoire racine par défaut
+		path = "/"
 	}
 
+listFiles:
+	log.Printf("[AGENT] handleFileList - Chemin final à lister: %s", path)
+	
 	// Lister les fichiers
 	files, err := c.fileManager.ListFiles(path)
 	if err != nil {
+		log.Printf("[AGENT] handleFileList - ERREUR lors du listing: %v", err)
 		errorMsg := common.NewMessageWithID(common.MessageTypeError, msg.ID, &common.ErrorData{
 			Code:    "LIST_ERROR",
 			Message: err.Error(),
 		})
 		errorMsg.AgentID = c.agentID
-		return c.sendMessage(errorMsg)
+		if sendErr := c.sendMessage(errorMsg); sendErr != nil {
+			log.Printf("[AGENT] handleFileList - ERREUR lors de l'envoi du message d'erreur: %v", sendErr)
+		}
+		return err
 	}
 
+	log.Printf("[AGENT] handleFileList - %d fichiers récupérés, envoi de la réponse", len(files))
+	
 	// Envoyer la liste des fichiers
 	responseMsg := common.NewMessageWithID(common.MessageTypeFileList, msg.ID, files)
 	responseMsg.AgentID = c.agentID
-	return c.sendMessage(responseMsg)
+	if err := c.sendMessage(responseMsg); err != nil {
+		log.Printf("[AGENT] handleFileList - ERREUR lors de l'envoi de la réponse: %v", err)
+		return err
+	}
+	
+	log.Printf("[AGENT] handleFileList - Réponse envoyée avec succès")
+	return nil
 }
 
 // sendMessage envoie un message via WebSocket
@@ -554,6 +582,11 @@ func (c *Client) sendHeartbeat() {
 			if err := c.sendMessage(heartbeat); err != nil {
 				log.Printf("Erreur d'envoi du heartbeat: %v", err)
 				c.disconnect()
+				// Signaler la déconnexion pour relancer la reconnexion
+				select {
+				case c.disconnectChan <- struct{}{}:
+				default:
+				}
 				return
 			}
 		case <-c.stopChan:

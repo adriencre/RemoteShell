@@ -15,28 +15,30 @@ type Database struct {
 
 // AgentRecord représente un enregistrement d'agent en base
 type AgentRecord struct {
-	ID          string    `gorm:"primaryKey" json:"id"`
-	Name        string    `json:"name"`
-	LastSeen    time.Time `json:"last_seen"`
-	Status      string    `json:"status"`
-	IPAddress   string    `json:"ip_address"`
-	UserAgent   string    `json:"user_agent"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID        string    `gorm:"primaryKey" json:"id"`
+	Name      string    `json:"name"`
+	LastSeen  time.Time `json:"last_seen"`
+	Status    string    `json:"status"`
+	IPAddress string    `json:"ip_address"`
+	UserAgent string    `json:"user_agent"`
+	Franchise string    `json:"franchise"` // Ex: "Lille", "Paris"
+	Category  string    `json:"category"`  // Ex: "Corporate", "Cantine"
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // CommandLog représente un log de commande
 type CommandLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Command   string    `json:"command"`
-	Args      string    `json:"args"`
-	WorkingDir string   `json:"working_dir"`
-	ExitCode  int       `json:"exit_code"`
-	Duration  int64     `json:"duration"`
-	Stdout    string    `json:"stdout"`
-	Stderr    string    `json:"stderr"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AgentID    string    `json:"agent_id"`
+	Command    string    `json:"command"`
+	Args       string    `json:"args"`
+	WorkingDir string    `json:"working_dir"`
+	ExitCode   int       `json:"exit_code"`
+	Duration   int64     `json:"duration"`
+	Stdout     string    `json:"stdout"`
+	Stderr     string    `json:"stderr"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // FileLog représente un log de fichier
@@ -53,27 +55,27 @@ type FileLog struct {
 
 // PrinterLog représente un log d'imprimante
 type PrinterLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	AgentID   string    `json:"agent_id"`
-	PrinterName string  `json:"printer_name"`
-	Status    string    `json:"status"`
-	JobCount  int       `json:"job_count"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	AgentID     string    `json:"agent_id"`
+	PrinterName string    `json:"printer_name"`
+	Status      string    `json:"status"`
+	JobCount    int       `json:"job_count"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // SystemLog représente un log système
 type SystemLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Hostname  string    `json:"hostname"`
-	OS        string    `json:"os"`
-	Arch      string    `json:"arch"`
-	Uptime    int64     `json:"uptime"`
-	MemoryTotal int64   `json:"memory_total"`
-	MemoryUsed  int64   `json:"memory_used"`
-	DiskTotal   int64   `json:"disk_total"`
-	DiskUsed    int64   `json:"disk_used"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	AgentID     string    `json:"agent_id"`
+	Hostname    string    `json:"hostname"`
+	OS          string    `json:"os"`
+	Arch        string    `json:"arch"`
+	Uptime      int64     `json:"uptime"`
+	MemoryTotal int64     `json:"memory_total"`
+	MemoryUsed  int64     `json:"memory_used"`
+	DiskTotal   int64     `json:"disk_total"`
+	DiskUsed    int64     `json:"disk_used"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // NewDatabase crée une nouvelle instance de base de données
@@ -148,15 +150,15 @@ func (d *Database) LogCommand(log *CommandLog) error {
 func (d *Database) GetCommandLogs(agentID string, limit int) ([]*CommandLog, error) {
 	var logs []*CommandLog
 	query := d.db.Order("created_at DESC")
-	
+
 	if agentID != "" {
 		query = query.Where("agent_id = ?", agentID)
 	}
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.Find(&logs).Error
 	return logs, err
 }
@@ -170,15 +172,15 @@ func (d *Database) LogFile(log *FileLog) error {
 func (d *Database) GetFileLogs(agentID string, limit int) ([]*FileLog, error) {
 	var logs []*FileLog
 	query := d.db.Order("created_at DESC")
-	
+
 	if agentID != "" {
 		query = query.Where("agent_id = ?", agentID)
 	}
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.Find(&logs).Error
 	return logs, err
 }
@@ -192,15 +194,15 @@ func (d *Database) LogPrinter(log *PrinterLog) error {
 func (d *Database) GetPrinterLogs(agentID string, limit int) ([]*PrinterLog, error) {
 	var logs []*PrinterLog
 	query := d.db.Order("created_at DESC")
-	
+
 	if agentID != "" {
 		query = query.Where("agent_id = ?", agentID)
 	}
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.Find(&logs).Error
 	return logs, err
 }
@@ -214,15 +216,15 @@ func (d *Database) LogSystem(log *SystemLog) error {
 func (d *Database) GetSystemLogs(agentID string, limit int) ([]*SystemLog, error) {
 	var logs []*SystemLog
 	query := d.db.Order("created_at DESC")
-	
+
 	if agentID != "" {
 		query = query.Where("agent_id = ?", agentID)
 	}
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	err := query.Find(&logs).Error
 	return logs, err
 }
@@ -265,28 +267,26 @@ func (d *Database) GetStats() (map[string]interface{}, error) {
 // CleanupOldLogs nettoie les anciens logs
 func (d *Database) CleanupOldLogs(days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days)
-	
+
 	// Nettoyer les logs de commandes
 	if err := d.db.Where("created_at < ?", cutoff).Delete(&CommandLog{}).Error; err != nil {
 		return err
 	}
-	
+
 	// Nettoyer les logs de fichiers
 	if err := d.db.Where("created_at < ?", cutoff).Delete(&FileLog{}).Error; err != nil {
 		return err
 	}
-	
+
 	// Nettoyer les logs d'imprimantes
 	if err := d.db.Where("created_at < ?", cutoff).Delete(&PrinterLog{}).Error; err != nil {
 		return err
 	}
-	
+
 	// Nettoyer les logs système
 	if err := d.db.Where("created_at < ?", cutoff).Delete(&SystemLog{}).Error; err != nil {
 		return err
 	}
-	
+
 	return nil
 }
-
-

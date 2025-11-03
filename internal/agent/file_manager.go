@@ -38,9 +38,16 @@ func NewFileManager(basePath string, chunkSize int) *FileManager {
 
 // ListFiles liste les fichiers d'un répertoire
 func (fm *FileManager) ListFiles(path string) ([]*common.FileData, error) {
+	// Normaliser le chemin demandé pour les comparaisons
+	normalizedPath := path
+	if normalizedPath == "" || normalizedPath == "." || normalizedPath == "./" {
+		normalizedPath = "/"
+	}
+
 	fullPath := fm.getFullPath(path)
 
 	log.Printf("DEBUG: ListFiles - chemin demandé: %s", path)
+	log.Printf("DEBUG: ListFiles - chemin normalisé: %s", normalizedPath)
 	log.Printf("DEBUG: ListFiles - chemin complet: %s", fullPath)
 	log.Printf("DEBUG: ListFiles - répertoire de base: %s", fm.basePath)
 
@@ -65,7 +72,7 @@ func (fm *FileManager) ListFiles(path string) ([]*common.FileData, error) {
 
 	if !stat.IsDir() {
 		// C'est un fichier, retourner ses informations
-		return []*common.FileData{fm.fileInfoToFileData(stat, path)}, nil
+		return []*common.FileData{fm.fileInfoToFileData(stat, normalizedPath)}, nil
 	}
 
 	// C'est un répertoire, lister son contenu
@@ -76,7 +83,13 @@ func (fm *FileManager) ListFiles(path string) ([]*common.FileData, error) {
 
 	var files []*common.FileData
 	for _, entry := range entries {
-		entryPath := filepath.Join(path, entry.Name())
+		// Utiliser le chemin normalisé pour construire les chemins des fichiers
+		var entryPath string
+		if normalizedPath == "/" {
+			entryPath = "/" + entry.Name()
+		} else {
+			entryPath = filepath.Join(normalizedPath, entry.Name())
+		}
 		entryFullPath := filepath.Join(fullPath, entry.Name())
 
 		entryStat, err := os.Stat(entryFullPath)
@@ -228,8 +241,18 @@ func (fm *FileManager) GetFileInfo(path string) (*common.FileData, error) {
 
 // getFullPath retourne le chemin complet d'un fichier
 func (fm *FileManager) getFullPath(path string) string {
+	// Normaliser les chemins spéciaux
+	if path == "" || path == "." || path == "./" {
+		path = "/"
+	}
+
 	// Nettoyer le chemin
 	cleanPath := filepath.Clean(path)
+
+	// Si c'est la racine, retourner directement
+	if cleanPath == "." || cleanPath == "" {
+		return "/"
+	}
 
 	// Si le chemin est absolu, le retourner tel quel
 	if filepath.IsAbs(cleanPath) {
@@ -238,7 +261,12 @@ func (fm *FileManager) getFullPath(path string) string {
 
 	// Mode root : pour les chemins relatifs, commencer depuis la racine
 	// Cela permet d'accéder à tous les répertoires du système
-	return filepath.Join("/", cleanPath)
+	result := filepath.Join("/", cleanPath)
+	// Normaliser pour éviter "/."
+	if result == "/." || result == "/./" {
+		return "/"
+	}
+	return result
 }
 
 // isPathSafe vérifie qu'un chemin est dans le répertoire de base
