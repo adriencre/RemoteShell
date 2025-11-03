@@ -40,10 +40,17 @@ type WebClient struct {
 	mu   sync.RWMutex
 }
 
+// AgentMetadata contient les métadonnées d'un agent (franchise, category, etc.)
+type AgentMetadata struct {
+	Franchise string `json:"franchise"`
+	Category  string `json:"category"`
+}
+
 // Hub gère les connexions des agents et des clients web
 type Hub struct {
 	agents        map[string]*Agent
 	webClients    map[string]*WebClient
+	metadata      map[string]*AgentMetadata // Métadonnées des agents (franchise, category)
 	register      chan *Agent
 	unregister    chan *Agent
 	registerWeb   chan *WebClient
@@ -57,6 +64,7 @@ func NewHub() *Hub {
 	return &Hub{
 		agents:        make(map[string]*Agent),
 		webClients:    make(map[string]*WebClient),
+		metadata:      make(map[string]*AgentMetadata),
 		register:      make(chan *Agent),
 		unregister:    make(chan *Agent),
 		registerWeb:   make(chan *WebClient),
@@ -396,4 +404,24 @@ func (h *Hub) BroadcastToWebClients(message *common.Message) {
 			}
 		}(client)
 	}
+}
+
+// GetAgentMetadata retourne les métadonnées d'un agent
+func (h *Hub) GetAgentMetadata(agentID string) *AgentMetadata {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	
+	meta, exists := h.metadata[agentID]
+	if !exists {
+		// Retourner des métadonnées par défaut si elles n'existent pas
+		return &AgentMetadata{Franchise: "", Category: ""}
+	}
+	return meta
+}
+
+// SetAgentMetadata définit les métadonnées d'un agent
+func (h *Hub) SetAgentMetadata(agentID string, metadata *AgentMetadata) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.metadata[agentID] = metadata
 }

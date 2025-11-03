@@ -65,6 +65,7 @@ func (api *APIServer) setupRoutes() {
 		// Agents
 		protected.GET("/agents", api.getAgents)
 		protected.GET("/agents/:id", api.getAgent)
+		protected.PUT("/agents/:id/metadata", api.updateAgentMetadata)
 		protected.POST("/agents/:id/exec", api.executeCommand)
 		protected.GET("/agents/:id/printers", api.getAgentPrinters)
 		protected.GET("/agents/:id/system", api.getAgentSystem)
@@ -155,6 +156,7 @@ func (api *APIServer) getAgents(c *gin.Context) {
 
 	var agentList []gin.H
 	for _, agent := range agents {
+		metadata := api.hub.GetAgentMetadata(agent.ID)
 		agentList = append(agentList, gin.H{
 			"id":          agent.ID,
 			"name":        agent.Name,
@@ -162,6 +164,8 @@ func (api *APIServer) getAgents(c *gin.Context) {
 			"active":      agent.IsActive(),
 			"printers":    len(agent.GetPrinters()),
 			"system_info": agent.GetSystemInfo(),
+			"franchise":   metadata.Franchise,
+			"category":    metadata.Category,
 		})
 	}
 
@@ -180,6 +184,7 @@ func (api *APIServer) getAgent(c *gin.Context) {
 		return
 	}
 
+	metadata := api.hub.GetAgentMetadata(agentID)
 	c.JSON(http.StatusOK, gin.H{
 		"id":          agent.ID,
 		"name":        agent.Name,
@@ -187,6 +192,41 @@ func (api *APIServer) getAgent(c *gin.Context) {
 		"active":      agent.IsActive(),
 		"printers":    agent.GetPrinters(),
 		"system_info": agent.GetSystemInfo(),
+		"franchise":   metadata.Franchise,
+		"category":    metadata.Category,
+	})
+}
+
+// updateAgentMetadata met à jour les métadonnées d'un agent (franchise, category)
+func (api *APIServer) updateAgentMetadata(c *gin.Context) {
+	agentID := c.Param("id")
+	agent, exists := api.hub.GetAgent(agentID)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "agent non trouvé"})
+		return
+	}
+
+	var metadata struct {
+		Franchise string `json:"franchise"`
+		Category  string `json:"category"`
+	}
+
+	if err := c.ShouldBindJSON(&metadata); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "données invalides"})
+		return
+	}
+
+	// Mettre à jour les métadonnées
+	api.hub.SetAgentMetadata(agent.ID, &AgentMetadata{
+		Franchise: metadata.Franchise,
+		Category:  metadata.Category,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "métadonnées mises à jour",
+		"agent_id": agentID,
+		"franchise": metadata.Franchise,
+		"category":  metadata.Category,
 	})
 }
 
@@ -268,6 +308,11 @@ func (api *APIServer) listFiles(c *gin.Context) {
 		path = "."
 	}
 
+	// Normaliser le chemin : "/" au lieu de "." pour la racine
+	if path == "." || path == "" {
+		path = "/"
+	}
+
 	// Vérifier d'abord le cache
 	if files, exists := agent.GetFileCache(path); exists {
 		c.JSON(http.StatusOK, gin.H{
@@ -282,27 +327,69 @@ func (api *APIServer) listFiles(c *gin.Context) {
 	msg := common.NewMessage(common.MessageTypeFileList, fileData)
 	msg.AgentID = agentID
 
-	// Envoyer la demande à l'agent
-	if err := agent.SendMessage(msg); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de communication avec l'agent"})
-		return
-	}
-
-	// Attendre un peu que l'agent traite la demande
-	time.Sleep(100 * time.Millisecond)
-
-	// Vérifier à nouveau le cache
-	if files, exists := agent.GetFileCache(path); exists {
+	// Envoyer la demande avec réponse (timeout: 5s)
+	response, err := agent.SendMessageWithResponse(msg, 5*time.Second)
+	if err != nil {
+		log.Printf("[API] listFiles - Erreur lors de la demande: %v", err)
 		c.JSON(http.StatusOK, gin.H{
-			"files": files,
-			"path":  path,
+			"files":   []*common.FileData{},
+			"path":    path,
+			"message": "délai d'attente dépassé, l'agent n'a pas répondu",
 		})
 		return
 	}
 
-	// Si toujours pas de données, retourner une liste vide
+	// Parser la réponse
+	var files []*common.FileData
+	if filesData, ok := response.Data.([]*common.FileData); ok {
+		files = filesData
+		// Mettre à jour le cache avec le bon chemin
+		agent.UpdateFileCache(path, files)
+	} else if filesInterface, ok := response.Data.([]interface{}); ok {
+		// Convertir []interface{} en []*common.FileData
+		files = make([]*common.FileData, 0, len(filesInterface))
+		for _, item := range filesInterface {
+			if fileMap, ok := item.(map[string]interface{}); ok {
+				fileData := &common.FileData{}
+				if pathVal, exists := fileMap["path"]; exists {
+					if pathStr, ok := pathVal.(string); ok {
+						fileData.Path = pathStr
+					}
+				}
+				if isDir, exists := fileMap["is_dir"]; exists {
+					if isDirBool, ok := isDir.(bool); ok {
+						fileData.IsDir = isDirBool
+					}
+				}
+				if size, exists := fileMap["size"]; exists {
+					if sizeFloat, ok := size.(float64); ok {
+						fileData.Size = int64(sizeFloat)
+					}
+				}
+				if mode, exists := fileMap["mode"]; exists {
+					if modeFloat, ok := mode.(float64); ok {
+						fileData.Mode = uint32(modeFloat)
+					}
+				}
+				if modified, exists := fileMap["modified"]; exists {
+					if modifiedStr, ok := modified.(string); ok {
+						if modifiedTime, err := time.Parse(time.RFC3339, modifiedStr); err == nil {
+							fileData.Modified = modifiedTime
+						}
+					}
+				}
+				files = append(files, fileData)
+			}
+		}
+		// Mettre à jour le cache avec le bon chemin
+		agent.UpdateFileCache(path, files)
+	} else {
+		log.Printf("[API] listFiles - Format de données inattendu: %T", response.Data)
+		files = []*common.FileData{}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"files": []*common.FileData{},
+		"files": files,
 		"path":  path,
 	})
 }
