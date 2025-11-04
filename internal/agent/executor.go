@@ -177,37 +177,49 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	// IMPORTANT: Le shell persistant DOIT conserver l'état entre les commandes
 	// Si cd est détecté, on l'exécute dans le shell persistant et on met à jour notre tracking
 	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
+		log.Printf("[Executor] Détection d'une commande cd: %s", fullCommand)
 		// Extraire le chemin du cd
 		cdParts := strings.Fields(strings.TrimSpace(fullCommand))
 		if len(cdParts) >= 2 {
 			newDir := cdParts[1]
+			log.Printf("[Executor] Nouveau répertoire extrait: %s", newDir)
 			// Gérer les cas spéciaux comme cd - ou cd ~
 			switch newDir {
 			case "-":
 				// cd - retourne au répertoire précédent, difficile à tracker
 				// Laisser le shell gérer ça - on ne met pas à jour workingDir
+				log.Printf("[Executor] cd - détecté, pas de mise à jour du workingDir")
 			case "~":
 				// cd ~ va au home directory
 				homeDir := os.Getenv("HOME")
 				if homeDir != "" {
 					e.workingDir = homeDir
+					log.Printf("[Executor] cd ~ détecté, workingDir mis à jour: %s", e.workingDir)
 				}
 			default:
 				// Mettre à jour le workingDir
 				// Si c'est un chemin absolu, on l'utilise tel quel
 				if strings.HasPrefix(newDir, "/") {
 					e.workingDir = newDir
+					log.Printf("[Executor] Chemin absolu détecté, workingDir mis à jour: %s", e.workingDir)
 				} else {
 					// Chemin relatif - on ne peut pas facilement résoudre sans connaître le pwd actuel
 					// On garde le tracking approximatif, mais le shell gère le chemin réel
 					// Note: Pour un vrai tracking, il faudrait exécuter 'pwd' après chaque cd relatif
 					e.workingDir = newDir
+					log.Printf("[Executor] Chemin relatif détecté, workingDir mis à jour: %s", e.workingDir)
 				}
 			}
 			// Le cd sera exécuté par la commande elle-même (fullCommand contient déjà "cd /home")
 			// Le shell persistant conservera cet état pour les commandes suivantes
+		} else {
+			log.Printf("[Executor] ERREUR: Impossible d'extraire le répertoire de la commande cd")
 		}
-	} else if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
+	} else {
+		log.Printf("[Executor] Commande non-cd détectée: %s, workingDir actuel: %s", fullCommand, e.workingDir)
+	}
+	
+	if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
 		// Si un workingDir est explicitement spécifié (pas "."), l'utiliser
 		// Ignorer "." car cela signifie "utiliser le répertoire courant du shell"
 		if cmdData.WorkingDir != e.workingDir {
