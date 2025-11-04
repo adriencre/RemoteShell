@@ -83,6 +83,7 @@ func (api *APIServer) setupRoutes() {
 	// Routes publiques
 	api.router.GET("/health", api.healthCheck)
 	api.router.GET("/download/agent", api.downloadAgent)
+	api.router.GET("/download/install-agent.sh", api.downloadInstallScript)
 
 	// Routes OAuth2/Authentik
 	if api.oauth2Config != nil {
@@ -186,6 +187,36 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	
 	// Servir le fichier
 	c.File(agentPath)
+}
+
+// downloadInstallScript sert le script d'installation de l'agent
+func (api *APIServer) downloadInstallScript(c *gin.Context) {
+	// Chercher le script dans plusieurs emplacements possibles
+	possiblePaths := []string{
+		"./scripts/install-agent.sh",
+		"./install-agent.sh",
+		"./install-agent-simple.sh",
+	}
+
+	var scriptPath string
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			scriptPath = path
+			break
+		}
+	}
+
+	if scriptPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script d'installation non trouvé"})
+		return
+	}
+
+	// Définir les en-têtes pour servir le script
+	c.Header("Content-Type", "text/x-shellscript")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "install-agent.sh"))
+	
+	// Servir le fichier
+	c.File(scriptPath)
 }
 
 // login authentifie un utilisateur
