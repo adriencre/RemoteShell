@@ -58,17 +58,15 @@ func (e *Executor) initShell() error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd.exe")
 	} else {
-		// Utiliser bash en mode interactif pour conserver l'état entre les commandes
-		// On utilise --norc --noprofile pour éviter les fichiers de configuration
-		// mais on garde le mode interactif pour que bash conserve l'état (variables, répertoire courant, etc.)
-		cmd = exec.Command("bash", "-i", "--norc", "--noprofile")
-		// Configurer les variables d'environnement pour forcer bash à conserver l'état
+		// Utiliser bash sans mode interactif mais avec --noprofile --norc
+		// Le mode non-interactif est plus stable pour les pipes
+		// Mais on doit gérer manuellement la persistance du répertoire de travail
+		cmd = exec.Command("bash", "--norc", "--noprofile")
+		// Configurer les variables d'environnement
 		env := os.Environ()
 		env = append(env, "SHELL=/bin/bash")
-		env = append(env, "PS1=")            // Désactiver complètement le prompt pour éviter les interférences
-		env = append(env, "PS2=")            // Désactiver le prompt secondaire
-		env = append(env, "TERM=dumb")       // Terminal simple pour éviter les codes de contrôle
-		env = append(env, "BASH_XTRACEFD=2") // Rediriger le debug vers stderr
+		env = append(env, "PS1=") // Pas de prompt
+		env = append(env, "PS2=")
 		cmd.Env = env
 	}
 
@@ -120,7 +118,6 @@ func (e *Executor) readOutput(marker string, timeout time.Duration) (string, err
 	go func() {
 		scanner := bufio.NewScanner(e.shellOut)
 		var output strings.Builder
-		foundMarker := false
 
 		// Lire jusqu'à ce qu'on trouve le marqueur de fin
 		for scanner.Scan() {
@@ -128,27 +125,14 @@ func (e *Executor) readOutput(marker string, timeout time.Duration) (string, err
 
 			// Si on trouve le marqueur, on arrête sans l'inclure
 			if strings.Contains(line, marker) {
-				foundMarker = true
 				break
 			}
 
-			// Ignorer les lignes vides
-			trimmedLine := strings.TrimSpace(line)
-			if trimmedLine == "" {
-				continue
-			}
-
-			// Ajouter la ligne à la sortie
 			output.WriteString(line + "\n")
 		}
 
 		if err := scanner.Err(); err != nil {
 			errorChan <- err
-			return
-		}
-
-		if !foundMarker {
-			errorChan <- fmt.Errorf("marqueur de fin non trouvé")
 			return
 		}
 
@@ -280,9 +264,6 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 		}, nil
 	}
 
-	// Attendre un peu pour que la commande commence à s'exécuter
-	time.Sleep(50 * time.Millisecond)
-
 	// Lire la sortie avec timeout
 	timeout := 30 * time.Second
 	if cmdData.Timeout > 0 {
@@ -291,12 +272,6 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 
 	output, err := e.readOutput(marker, timeout)
 	duration := time.Since(start)
-
-	if err != nil {
-		log.Printf("DEBUG: [Executor] Erreur lors de la lecture de la sortie: %v", err)
-	} else {
-		log.Printf("DEBUG: [Executor] Sortie reçue (longueur: %d): %q", len(output), output)
-	}
 
 	// Après l'exécution, si c'était un cd réussi, mettre à jour le workingDir réel
 	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") && err == nil {
