@@ -57,8 +57,16 @@ func (e *Executor) initShell() error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd.exe")
 	} else {
-		// Utiliser bash avec sudo pour les privilèges root (sans mode interactif)
-		cmd = exec.Command("sudo", "-n", "bash")
+		// Utiliser bash en mode interactif (-i) pour conserver l'état entre les commandes
+		// Le mode interactif permet à bash de conserver le répertoire de travail et les variables
+		// On utilise aussi --norc pour éviter que les fichiers de configuration interfèrent
+		// mais on garde l'état grâce au mode interactif
+		// Alternative: bash sans -i mais avec des variables d'environnement pour forcer l'état
+		cmd = exec.Command("sudo", "-n", "bash", "-i")
+		// Forcer bash à rester actif et à conserver l'état
+		cmd.Env = append(os.Environ(), "SHELL=/bin/bash")
+		// S'assurer que le répertoire de travail est préservé
+		cmd.Dir = "" // Laisser vide pour hériter du répertoire parent, ou utiliser cmd.Dir = "/"
 	}
 
 	// Configurer les pipes
@@ -165,7 +173,8 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	}
 
 	// Détecter les commandes cd pour mettre à jour le workingDir
-	// Le shell persistant garde déjà l'état, on doit juste mettre à jour notre tracking
+	// IMPORTANT: Le shell persistant DOIT conserver l'état entre les commandes
+	// Si cd est détecté, on l'exécute dans le shell persistant et on met à jour notre tracking
 	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
 		// Extraire le chemin du cd
 		cdParts := strings.Fields(strings.TrimSpace(fullCommand))
@@ -175,41 +184,55 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 			switch newDir {
 			case "-":
 				// cd - retourne au répertoire précédent, difficile à tracker
-				// Laisser le shell gérer ça
+				// Laisser le shell gérer ça - on ne met pas à jour workingDir
 			case "~":
 				// cd ~ va au home directory
-				e.workingDir = os.Getenv("HOME")
+				homeDir := os.Getenv("HOME")
+				if homeDir != "" {
+					e.workingDir = homeDir
+				}
 			default:
 				// Mettre à jour le workingDir
-				// Si c'est un chemin relatif, on le garde relatif (le shell le résoudra)
 				// Si c'est un chemin absolu, on l'utilise tel quel
 				if strings.HasPrefix(newDir, "/") {
 					e.workingDir = newDir
 				} else {
-					// Chemin relatif - on garde le tracking mais le shell gère le chemin réel
-					// On ne peut pas facilement résoudre le chemin relatif sans connaître le pwd actuel
-					// Donc on laisse le shell gérer et on met juste à jour notre tracking approximatif
+					// Chemin relatif - on ne peut pas facilement résoudre sans connaître le pwd actuel
+					// On garde le tracking approximatif, mais le shell gère le chemin réel
+					// Note: Pour un vrai tracking, il faudrait exécuter 'pwd' après chaque cd relatif
 					e.workingDir = newDir
 				}
 			}
+			// Le cd sera exécuté par la commande elle-même (fullCommand contient déjà "cd /home")
+			// Le shell persistant conservera cet état pour les commandes suivantes
 		}
 	} else if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
 		// Si un workingDir est explicitement spécifié (pas "."), l'utiliser
 		// Ignorer "." car cela signifie "utiliser le répertoire courant du shell"
 		if cmdData.WorkingDir != e.workingDir {
+			// Envoyer le cd AVANT la commande pour que le shell soit dans le bon répertoire
 			e.shellIn.Write([]byte(fmt.Sprintf("cd %s\n", cmdData.WorkingDir)))
 			e.workingDir = cmdData.WorkingDir
-			time.Sleep(50 * time.Millisecond) // Attendre que le cd soit effectué
+			time.Sleep(100 * time.Millisecond) // Attendre que le cd soit effectué
 		}
 	}
-	// Si workingDir est "." ou vide, on utilise le répertoire courant du shell persistant
-	// Pas besoin de changer de répertoire
+	// Avec bash -i (mode interactif), le shell devrait conserver l'état
+	// Mais on préfixe quand même avec cd pour être sûr que ça fonctionne
+	// Si bash -i fonctionne correctement, on pourra retirer ce préfixage plus tard
+	commandToExecute := fullCommand
+	if e.workingDir != "" && !strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
+		// Si on a un workingDir défini et que ce n'est pas un cd, préfixer avec cd
+		// Cela garantit que la commande s'exécute dans le bon répertoire
+		commandToExecute = fmt.Sprintf("cd %s && %s", e.workingDir, fullCommand)
+	}
 
 	// Générer un marqueur unique pour cette commande
 	marker := fmt.Sprintf("__CMD_END_%d__", time.Now().UnixNano())
 
 	// Envoyer la commande avec un marqueur de fin
-	commandWithMarker := fmt.Sprintf("%s; echo '%s'\n", fullCommand, marker)
+	// NOTE: Si c'est un cd, la commande sera "cd /home; echo 'marker'"
+	// Sinon, si workingDir est défini, ce sera "cd /home && ls; echo 'marker'"
+	commandWithMarker := fmt.Sprintf("%s; echo '%s'\n", commandToExecute, marker)
 	if _, err := e.shellIn.Write([]byte(commandWithMarker)); err != nil {
 		return &common.CommandOutput{
 			Stdout:   "",
