@@ -24,13 +24,35 @@ fi
 # Demander toutes les informations nécessaires
 echo "📋 Configuration de l'agent RemoteShell"
 echo ""
+
+# Valeur par défaut (sans port pour HTTPS)
+DEFAULT_SERVER_URL="rms.lfgroup.fr"
+
+# Vérifier si stdin est disponible (tty) pour poser des questions interactives
+if [ ! -t 0 ]; then
+    # Mode non-interactif détecté - refuser l'exécution
+    echo "❌ Erreur: Ce script nécessite un mode interactif."
+    echo ""
+    echo "Le script doit être exécuté de manière interactive pour poser les questions de configuration."
+    echo ""
+    echo "💡 Solution:"
+    echo "   1. Téléchargez d'abord le script:"
+    echo "      curl -O https://rms.lfgroup.fr/download/install-agent.sh"
+    echo ""
+    echo "   2. Rendez-le exécutable:"
+    echo "      chmod +x install-agent.sh"
+    echo ""
+    echo "   3. Exécutez-le de manière interactive:"
+    echo "      sudo ./install-agent.sh"
+    echo ""
+    exit 1
+fi
+
+# Mode interactif - poser des questions
 echo "Ce script va vous poser quelques questions pour configurer l'agent."
 echo ""
 
-# Demander l'URL du serveur (utilisée pour télécharger l'agent ET pour la connexion)
-# Valeur par défaut
-DEFAULT_SERVER_URL="rms.lfgroup.fr:8081"
-
+# Demander l'URL du serveur
 while [ -z "$SERVER_URL" ]; do
     read -p "URL du serveur RemoteShell [défaut: $DEFAULT_SERVER_URL]: " SERVER_URL
     # Si vide, utiliser la valeur par défaut
@@ -39,23 +61,42 @@ while [ -z "$SERVER_URL" ]; do
         echo "✅ Utilisation de l'URL par défaut: $SERVER_URL"
     fi
 done
+
 echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la connexion de l'agent au serveur."
 echo ""
 
-# Normaliser l'URL (ajouter http:// ou https:// si nécessaire)
+# Normaliser l'URL
+# Pour rms.lfgroup.fr : HTTPS sans port pour téléchargement, mais garder le port pour WebSocket
 if [[ "$SERVER_URL" == http://* ]] || [[ "$SERVER_URL" == https://* ]]; then
+    # URL avec protocole déjà spécifié
     DOWNLOAD_BASE="$SERVER_URL"
-    # Extraire host:port pour la configuration
+    # Extraire host:port pour la configuration WebSocket
     SERVER_HOST_PORT="${SERVER_URL#http://}"
     SERVER_HOST_PORT="${SERVER_HOST_PORT#https://}"
-else
-    # Utiliser HTTPS pour rms.lfgroup.fr, HTTP pour les autres
-    if [[ "$SERVER_URL" == *"rms.lfgroup.fr"* ]]; then
-        DOWNLOAD_BASE="https://$SERVER_URL"
-    else
-        DOWNLOAD_BASE="http://$SERVER_URL"
+    
+    # Si c'est HTTPS avec rms.lfgroup.fr, enlever le port de DOWNLOAD_BASE
+    if [[ "$DOWNLOAD_BASE" == https://rms.lfgroup.fr:* ]]; then
+        DOWNLOAD_BASE="https://rms.lfgroup.fr"
     fi
-    SERVER_HOST_PORT="$SERVER_URL"
+else
+    # URL sans protocole
+    if [[ "$SERVER_URL" == *"rms.lfgroup.fr"* ]]; then
+        # Pour rms.lfgroup.fr, utiliser HTTPS sans port pour téléchargement
+        if [[ "$SERVER_URL" == *:* ]]; then
+            # Extraire le domaine sans le port pour HTTPS
+            DOMAIN_ONLY="${SERVER_URL%%:*}"
+            DOWNLOAD_BASE="https://$DOMAIN_ONLY"
+            # Garder le port pour la connexion WebSocket
+            SERVER_HOST_PORT="$SERVER_URL"
+        else
+            DOWNLOAD_BASE="https://$SERVER_URL"
+            SERVER_HOST_PORT="$SERVER_URL"
+        fi
+    else
+        # Pour les autres domaines, utiliser HTTP et garder le port
+        DOWNLOAD_BASE="http://$SERVER_URL"
+        SERVER_HOST_PORT="$SERVER_URL"
+    fi
 fi
 
 echo "📥 Téléchargement de l'agent depuis $DOWNLOAD_BASE/download/agent..."
@@ -109,6 +150,7 @@ echo ""
 echo "📋 Configuration de l'agent"
 echo ""
 
+# Mode interactif obligatoire - poser des questions
 # Demander l'ID de l'agent
 while [ -z "$AGENT_ID" ]; do
     read -p "ID de l'agent (ex: serveur-impression-01): " AGENT_ID
