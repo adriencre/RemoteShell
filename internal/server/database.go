@@ -3,7 +3,7 @@ package server
 import (
 	"time"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite" // Driver SQLite pur Go (pas besoin de CGO)
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -98,7 +98,8 @@ func NewDatabase(dbPath string) (*Database, error) {
 		Logger: logger.Default.LogMode(logger.Info),
 	}
 
-	// Connexion SQLite
+	// Connexion SQLite avec driver pur Go (pas besoin de CGO)
+	// github.com/glebarez/sqlite est une implémentation pure Go de SQLite
 	db, err := gorm.Open(sqlite.Open(dbPath), config)
 	if err != nil {
 		return nil, err
