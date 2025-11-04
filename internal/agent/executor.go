@@ -58,15 +58,16 @@ func (e *Executor) initShell() error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd.exe")
 	} else {
-		// Utiliser bash sans mode interactif pour éviter les problèmes de prompt
-		// Mais on configure les variables d'environnement pour forcer la persistance
-		// On utilise --norc pour éviter que les fichiers de configuration interfèrent
-		cmd = exec.Command("sudo", "-n", "bash", "--norc", "--noprofile")
+		// Utiliser bash en mode interactif pour conserver l'état entre les commandes
+		// On utilise --norc --noprofile pour éviter les fichiers de configuration
+		// mais on garde le mode interactif pour que bash conserve l'état (variables, répertoire courant, etc.)
+		cmd = exec.Command("bash", "-i", "--norc", "--noprofile")
 		// Configurer les variables d'environnement pour forcer bash à conserver l'état
 		env := os.Environ()
 		env = append(env, "SHELL=/bin/bash")
-		env = append(env, "PS1=") // Désactiver le prompt pour éviter les interférences
-		env = append(env, "PS2=")
+		env = append(env, "PS1=$ ") // Prompt simple pour éviter les interférences
+		env = append(env, "PS2=> ")
+		env = append(env, "TERM=dumb") // Terminal simple pour éviter les codes de contrôle
 		cmd.Env = env
 	}
 
@@ -153,7 +154,7 @@ func (e *Executor) readOutput(marker string, timeout time.Duration) (string, err
 // Execute exécute une commande et retourne le résultat
 func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*common.CommandOutput, error) {
 	// Log au début pour confirmer que Execute est appelé
-	log.Printf("[Executor] === Execute appelé === Commande: %q, WorkingDir reçu: %q, WorkingDir interne: %q",
+	log.Printf("DEBUG: [Executor] === Execute appelé === Commande: %q, WorkingDir reçu: %q, WorkingDir interne: %q",
 		cmdData.Command, cmdData.WorkingDir, e.workingDir)
 	start := time.Now()
 
@@ -179,13 +180,14 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	// Détecter les commandes cd pour mettre à jour le workingDir
 	// IMPORTANT: Le shell persistant DOIT conserver l'état entre les commandes
 	// Si cd est détecté, on l'exécute dans le shell persistant et on met à jour notre tracking
-	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
-		log.Printf("[Executor] Détection d'une commande cd: %s", fullCommand)
+	isCdCommand := strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ")
+	if isCdCommand {
+		log.Printf("DEBUG: [Executor] Détection d'une commande cd: %s", fullCommand)
 		// Extraire le chemin du cd
 		cdParts := strings.Fields(strings.TrimSpace(fullCommand))
 		if len(cdParts) >= 2 {
 			newDir := cdParts[1]
-			log.Printf("[Executor] Nouveau répertoire extrait: %s", newDir)
+			log.Printf("DEBUG: [Executor] Nouveau répertoire extrait: %s", newDir)
 			// Gérer les cas spéciaux comme cd - ou cd ~
 			switch newDir {
 			case "-":
@@ -203,45 +205,47 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 				// Mettre à jour le workingDir
 				// Si c'est un chemin absolu, on l'utilise tel quel
 				if strings.HasPrefix(newDir, "/") {
+					oldDir := e.workingDir
 					e.workingDir = newDir
-					log.Printf("[Executor] Chemin absolu détecté, workingDir mis à jour: %s", e.workingDir)
+					log.Printf("DEBUG: [Executor] Chemin absolu détecté, workingDir mis à jour: %q -> %q", oldDir, e.workingDir)
 				} else {
-					// Chemin relatif - on ne peut pas facilement résoudre sans connaître le pwd actuel
-					// On garde le tracking approximatif, mais le shell gère le chemin réel
-					// Note: Pour un vrai tracking, il faudrait exécuter 'pwd' après chaque cd relatif
+					// Chemin relatif - on doit résoudre le chemin absolu
+					// Exécuter pwd pour obtenir le répertoire actuel, puis résoudre le chemin relatif
+					// Pour l'instant, on garde le tracking approximatif
+					// Le shell gérera le chemin réel lors de l'exécution
 					e.workingDir = newDir
 					log.Printf("[Executor] Chemin relatif détecté, workingDir mis à jour: %s", e.workingDir)
 				}
 			}
-			// Le cd sera exécuté par la commande elle-même (fullCommand contient déjà "cd /home")
-			// Le shell persistant conservera cet état pour les commandes suivantes
 		} else {
 			log.Printf("[Executor] ERREUR: Impossible d'extraire le répertoire de la commande cd")
 		}
 	} else {
-		log.Printf("[Executor] Commande non-cd détectée: %s, workingDir actuel: %s", fullCommand, e.workingDir)
+		log.Printf("DEBUG: [Executor] Commande non-cd détectée: %s, workingDir actuel: %s", fullCommand, e.workingDir)
 	}
 
-	if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
-		// Si un workingDir est explicitement spécifié (pas "."), l'utiliser
-		// Ignorer "." car cela signifie "utiliser le répertoire courant du shell"
-		if cmdData.WorkingDir != e.workingDir {
-			// Envoyer le cd AVANT la commande pour que le shell soit dans le bon répertoire
-			e.shellIn.Write([]byte(fmt.Sprintf("cd %s\n", cmdData.WorkingDir)))
-			e.workingDir = cmdData.WorkingDir
-			time.Sleep(100 * time.Millisecond) // Attendre que le cd soit effectué
-		}
-	}
+	// Ignorer cmdData.WorkingDir si c'est "." car cela signifie "utiliser le répertoire courant du shell"
+	// On utilise toujours e.workingDir qui est le répertoire réel du shell persistant
+
 	// IMPORTANT: Préfixer TOUJOURS avec cd si un workingDir est défini
 	// C'est la seule façon fiable de garantir que la commande s'exécute dans le bon répertoire
 	// car le shell persistant ne conserve pas toujours l'état correctement
 	commandToExecute := fullCommand
-	if e.workingDir != "" && !strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
+	if e.workingDir != "" && !isCdCommand {
 		// Si on a un workingDir défini et que ce n'est pas un cd, préfixer avec cd
 		// Cela garantit que la commande s'exécute dans le bon répertoire
 		// Format: "cd /home && ls" pour s'assurer que cd réussit avant d'exécuter ls
 		commandToExecute = fmt.Sprintf("cd %s && %s", e.workingDir, fullCommand)
-		log.Printf("[Executor] Préfixage commande: cd %s && %s", e.workingDir, fullCommand)
+		log.Printf("DEBUG: [Executor] Préfixage appliqué: cd %s && %s", e.workingDir, fullCommand)
+		log.Printf("DEBUG: [Executor] workingDir interne=%q, fullCommand=%q, commandToExecute=%q",
+			e.workingDir, fullCommand, commandToExecute)
+	} else if isCdCommand {
+		// Pour les commandes cd, on les exécute telles quelles
+		// Le workingDir a déjà été mis à jour plus haut
+		log.Printf("DEBUG: [Executor] Commande cd détectée, pas de préfixage: %q", fullCommand)
+	} else {
+		log.Printf("DEBUG: [Executor] Pas de préfixage: workingDir=%q, fullCommand=%q, est-cd=%v",
+			e.workingDir, fullCommand, isCdCommand)
 	}
 
 	// Générer un marqueur unique pour cette commande
@@ -251,7 +255,7 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	// NOTE: Si c'est un cd, la commande sera "cd /home; echo 'marker'"
 	// Sinon, si workingDir est défini, ce sera "cd /home && ls; echo 'marker'"
 	commandWithMarker := fmt.Sprintf("%s; echo '%s'\n", commandToExecute, marker)
-	log.Printf("[Executor] === Commande envoyée au shell === %q", commandWithMarker)
+	log.Printf("DEBUG: [Executor] === Commande envoyée au shell === %q", commandWithMarker)
 	if _, err := e.shellIn.Write([]byte(commandWithMarker)); err != nil {
 		return &common.CommandOutput{
 			Stdout:   "",
