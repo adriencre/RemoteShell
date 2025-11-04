@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -57,16 +58,16 @@ func (e *Executor) initShell() error {
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("cmd.exe")
 	} else {
-		// Utiliser bash en mode interactif (-i) pour conserver l'état entre les commandes
-		// Le mode interactif permet à bash de conserver le répertoire de travail et les variables
-		// On utilise aussi --norc pour éviter que les fichiers de configuration interfèrent
-		// mais on garde l'état grâce au mode interactif
-		// Alternative: bash sans -i mais avec des variables d'environnement pour forcer l'état
-		cmd = exec.Command("sudo", "-n", "bash", "-i")
-		// Forcer bash à rester actif et à conserver l'état
-		cmd.Env = append(os.Environ(), "SHELL=/bin/bash")
-		// S'assurer que le répertoire de travail est préservé
-		cmd.Dir = "" // Laisser vide pour hériter du répertoire parent, ou utiliser cmd.Dir = "/"
+		// Utiliser bash sans mode interactif pour éviter les problèmes de prompt
+		// Mais on configure les variables d'environnement pour forcer la persistance
+		// On utilise --norc pour éviter que les fichiers de configuration interfèrent
+		cmd = exec.Command("sudo", "-n", "bash", "--norc", "--noprofile")
+		// Configurer les variables d'environnement pour forcer bash à conserver l'état
+		env := os.Environ()
+		env = append(env, "SHELL=/bin/bash")
+		env = append(env, "PS1=") // Désactiver le prompt pour éviter les interférences
+		env = append(env, "PS2=")
+		cmd.Env = env
 	}
 
 	// Configurer les pipes
@@ -216,14 +217,16 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 			time.Sleep(100 * time.Millisecond) // Attendre que le cd soit effectué
 		}
 	}
-	// Avec bash -i (mode interactif), le shell devrait conserver l'état
-	// Mais on préfixe quand même avec cd pour être sûr que ça fonctionne
-	// Si bash -i fonctionne correctement, on pourra retirer ce préfixage plus tard
+	// IMPORTANT: Préfixer TOUJOURS avec cd si un workingDir est défini
+	// C'est la seule façon fiable de garantir que la commande s'exécute dans le bon répertoire
+	// car le shell persistant ne conserve pas toujours l'état correctement
 	commandToExecute := fullCommand
 	if e.workingDir != "" && !strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
 		// Si on a un workingDir défini et que ce n'est pas un cd, préfixer avec cd
 		// Cela garantit que la commande s'exécute dans le bon répertoire
+		// Format: "cd /home && ls" pour s'assurer que cd réussit avant d'exécuter ls
 		commandToExecute = fmt.Sprintf("cd %s && %s", e.workingDir, fullCommand)
+		log.Printf("[Executor] Préfixage commande: cd %s && %s", e.workingDir, fullCommand)
 	}
 
 	// Générer un marqueur unique pour cette commande
