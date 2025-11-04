@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -153,15 +154,28 @@ func (c *Client) connect() error {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true, // À changer en production
 			},
+			HandshakeTimeout: 30 * time.Second, // Timeout plus long pour le handshake
 		}
+		log.Printf("Tentative de connexion WSS (WebSocket Secure) à %s", serverURL)
 	} else {
-		dialer = websocket.DefaultDialer
+		dialer = &websocket.Dialer{
+			HandshakeTimeout: 30 * time.Second,
+		}
+		log.Printf("Tentative de connexion WS (WebSocket) à %s", serverURL)
 	}
 
 	// Connexion WebSocket
-	conn, _, err := dialer.Dial(serverURL, nil)
+	conn, resp, err := dialer.Dial(serverURL, nil)
 	if err != nil {
-		return fmt.Errorf("échec de la connexion WebSocket: %v", err)
+		errorMsg := fmt.Sprintf("échec de la connexion WebSocket: %v", err)
+		if resp != nil {
+			errorMsg += fmt.Sprintf(" (Status: %d)", resp.StatusCode)
+			if resp.Body != nil {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				errorMsg += fmt.Sprintf(" (Body: %s)", string(bodyBytes))
+			}
+		}
+		return fmt.Errorf(errorMsg)
 	}
 
 	c.mu.Lock()

@@ -236,6 +236,21 @@ AUTH_TOKEN="${AUTH_TOKEN}"
 EOF
 chmod 600 /etc/remoteshell/agent.conf
 
+# Déterminer si TLS doit être utilisé
+# Pour rms.lfgroup.fr, toujours utiliser WSS (WebSocket Secure) via le reverse proxy
+USE_TLS=""
+if [[ "$SERVER_HOST_PORT" == *"rms.lfgroup.fr"* ]]; then
+    # Pour rms.lfgroup.fr, utiliser WSS (WebSocket Secure) via le reverse proxy sur le port 443
+    USE_TLS="--tls"
+    # Si un port est spécifié autre que 443, utiliser le port 443 pour WSS
+    if [[ "$SERVER_HOST_PORT" == *":8081" ]]; then
+        SERVER_HOST_PORT="rms.lfgroup.fr:443"
+    elif [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
+        SERVER_HOST_PORT="rms.lfgroup.fr:443"
+    fi
+    echo "ℹ️  Utilisation de WSS (WebSocket Secure) sur le port 443 via le reverse proxy"
+fi
+
 # Créer le fichier de service systemd
 echo "📄 Création du service systemd..."
 cat > /etc/systemd/system/remoteshell-agent.service <<EOF
@@ -248,7 +263,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/remoteshell
-ExecStart=/usr/local/bin/remoteshell-agent --server ${SERVER_HOST_PORT} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN}
+ExecStart=/usr/local/bin/remoteshell-agent --server ${SERVER_HOST_PORT} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN} ${USE_TLS}
 Restart=always
 RestartSec=10
 StandardOutput=journal
