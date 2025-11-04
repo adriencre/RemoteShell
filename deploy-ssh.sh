@@ -96,7 +96,7 @@ if [ -z "$HOST" ] || [ -z "$USER" ]; then
 fi
 
 # Vérifier que l'agent est compilé
-if [ ! -f "build/remoteshell-agent" ]; then
+if [ ! -f "build/rms-agent" ]; then
     echo -e "${YELLOW}⚠️  L'agent n'est pas compilé. Compilation en cours...${NC}"
     make agent
     if [ $? -ne 0 ]; then
@@ -136,7 +136,7 @@ REMOTE_DIR="/tmp/remoteshell-deploy-$$"
 ssh -p "$SSH_PORT" "$USER@$HOST" "mkdir -p $REMOTE_DIR"
 
 # Copier l'agent
-scp -P "$SSH_PORT" build/remoteshell-agent "$USER@$HOST:$REMOTE_DIR/remoteshell-agent"
+scp -P "$SSH_PORT" build/rms-agent "$USER@$HOST:$REMOTE_DIR/rms-agent"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Agent copié avec succès${NC}"
@@ -159,8 +159,8 @@ if [ "$INSTALL_SERVICE" = true ]; then
     # Créer le fichier de service systemd
     ssh -p "$SSH_PORT" "$USER@$HOST" << EOF
 sudo mkdir -p /usr/local/bin /etc/remoteshell
-sudo cp $REMOTE_DIR/remoteshell-agent /usr/local/bin/remoteshell-agent
-sudo chmod +x /usr/local/bin/remoteshell-agent
+sudo cp $REMOTE_DIR/rms-agent /usr/local/bin/rms-agent
+sudo chmod +x /usr/local/bin/rms-agent
 
 # Créer la configuration
 sudo tee /etc/remoteshell/agent.conf > /dev/null << CONF
@@ -171,7 +171,7 @@ AUTH_TOKEN=$TOKEN
 CONF
 
 # Créer le service systemd
-sudo tee /etc/systemd/system/remoteshell-agent.service > /dev/null << SERVICE
+sudo tee /etc/systemd/system/rms-agent.service > /dev/null << SERVICE
 [Unit]
 Description=RemoteShell Agent
 After=network.target
@@ -179,7 +179,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/remoteshell-agent --server $SERVER_URL --id "$AGENT_ID" --name "$AGENT_NAME" --token "$TOKEN"
+ExecStart=/usr/local/bin/rms-agent --server $SERVER_URL --id "$AGENT_ID" --name "$AGENT_NAME" --token "$TOKEN"
 Restart=always
 RestartSec=10
 
@@ -189,9 +189,9 @@ SERVICE
 
 # Recharger systemd et démarrer le service
 sudo systemctl daemon-reload
-sudo systemctl enable remoteshell-agent
-sudo systemctl restart remoteshell-agent
-sudo systemctl status remoteshell-agent --no-pager
+sudo systemctl enable rms-agent
+sudo systemctl restart rms-agent
+sudo systemctl status rms-agent --no-pager
 
 # Nettoyer
 rm -rf $REMOTE_DIR
@@ -202,9 +202,9 @@ EOF
         echo -e "${GREEN}✅ Service installé et démarré avec succès !${NC}"
         echo ""
         echo "📊 Commandes utiles:"
-        echo "   Vérifier le statut: ssh -p $SSH_PORT $USER@$HOST 'sudo systemctl status remoteshell-agent'"
-        echo "   Voir les logs: ssh -p $SSH_PORT $USER@$HOST 'sudo journalctl -u remoteshell-agent -f'"
-        echo "   Redémarrer: ssh -p $SSH_PORT $USER@$HOST 'sudo systemctl restart remoteshell-agent'"
+        echo "   Vérifier le statut: ssh -p $SSH_PORT $USER@$HOST 'sudo systemctl status rms-agent'"
+        echo "   Voir les logs: ssh -p $SSH_PORT $USER@$HOST 'sudo journalctl -u rms-agent -f'"
+        echo "   Redémarrer: ssh -p $SSH_PORT $USER@$HOST 'sudo systemctl restart rms-agent'"
     else
         echo -e "${RED}❌ Erreur lors de l'installation du service${NC}"
         exit 1
@@ -215,17 +215,17 @@ else
     # Créer un script de démarrage sur le serveur distant
     ssh -p "$SSH_PORT" "$USER@$HOST" << EOF
 cd $REMOTE_DIR
-chmod +x remoteshell-agent
+chmod +x rms-agent
 
 # Tuer l'ancien agent s'il existe
-pkill -f remoteshell-agent || true
+pkill -f rms-agent || true
 
 # Démarrer le nouvel agent en arrière-plan
-nohup ./remoteshell-agent --server "$SERVER_URL" --id "$AGENT_ID" --name "$AGENT_NAME" --token "$TOKEN" > agent.log 2>&1 &
+nohup ./rms-agent --server "$SERVER_URL" --id "$AGENT_ID" --name "$AGENT_NAME" --token "$TOKEN" > agent.log 2>&1 &
 
 sleep 2
-if pgrep -f remoteshell-agent > /dev/null; then
-    echo "✅ Agent démarré avec succès (PID: \$(pgrep -f remoteshell-agent))"
+if pgrep -f rms-agent > /dev/null; then
+    echo "✅ Agent démarré avec succès (PID: \$(pgrep -f rms-agent))"
     echo "📝 Logs disponibles dans: $REMOTE_DIR/agent.log"
 else
     echo "❌ Erreur lors du démarrage de l'agent"
@@ -240,7 +240,7 @@ EOF
     echo "   ssh -p $SSH_PORT $USER@$HOST 'tail -f $REMOTE_DIR/agent.log'"
     echo ""
     echo "🛑 Pour arrêter l'agent:"
-    echo "   ssh -p $SSH_PORT $USER@$HOST 'pkill -f remoteshell-agent'"
+    echo "   ssh -p $SSH_PORT $USER@$HOST 'pkill -f rms-agent'"
 fi
 
 echo ""

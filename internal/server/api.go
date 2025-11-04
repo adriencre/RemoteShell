@@ -161,10 +161,10 @@ func (api *APIServer) healthCheck(c *gin.Context) {
 func (api *APIServer) downloadAgent(c *gin.Context) {
 	// Chercher le fichier dans plusieurs emplacements possibles
 	possiblePaths := []string{
-		"./build/remoteshell-agent",
-		"./build/web/remoteshell-agent",
-		"./remoteshell-agent",
-		"./web/public/remoteshell-agent",
+		"./build/rms-agent",
+		"./build/web/rms-agent",
+		"./rms-agent",
+		"./web/public/rms-agent",
 	}
 
 	var agentPath string
@@ -182,7 +182,7 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 
 	// Définir les en-têtes pour forcer le téléchargement
 	// Le nom du fichier sera celui du fichier source
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "remoteshell-agent"))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "rms-agent"))
 	c.Header("Content-Type", "application/octet-stream")
 	
 	// Servir le fichier

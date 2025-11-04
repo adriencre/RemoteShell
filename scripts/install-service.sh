@@ -5,11 +5,11 @@
 
 set -e
 
-SERVICE_NAME="remoteshell-agent"
+SERVICE_NAME="rms-agent"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 CONFIG_DIR="/etc/remoteshell"
 CONFIG_FILE="${CONFIG_DIR}/agent.conf"
-BIN_PATH="/usr/local/bin/remoteshell-agent"
+BIN_PATH="/usr/local/bin/rms-agent"
 WORK_DIR="/opt/remoteshell"
 
 # Couleurs pour l'affichage
@@ -42,14 +42,14 @@ install_service() {
     fi
     
     # Vérifier si l'exécutable existe
-    if [ ! -f "./build/remoteshell-agent" ]; then
+    if [ ! -f "./build/rms-agent" ]; then
         echo -e "${RED}❌ L'exécutable n'existe pas. Compilez d'abord avec 'make agent'${NC}"
         exit 1
     fi
     
     # Copier l'exécutable
     echo "📋 Copie de l'exécutable vers $BIN_PATH"
-    cp ./build/remoteshell-agent "$BIN_PATH"
+    cp ./build/rms-agent "$BIN_PATH"
     chmod +x "$BIN_PATH"
     
     # Créer le fichier de configuration s'il n'existe pas
@@ -200,7 +200,7 @@ update_service() {
     echo ""
     
     # Vérifier si l'exécutable existe
-    if [ ! -f "./build/remoteshell-agent" ]; then
+    if [ ! -f "./build/rms-agent" ]; then
         echo -e "${RED}❌ L'exécutable n'existe pas. Compilez d'abord avec 'make agent'${NC}"
         exit 1
     fi
@@ -213,7 +213,7 @@ update_service() {
     
     # Copier le nouveau binaire
     echo "📋 Copie du nouvel exécutable"
-    cp ./build/remoteshell-agent "$BIN_PATH"
+    cp ./build/rms-agent "$BIN_PATH"
     chmod +x "$BIN_PATH"
     
     # Démarrer le service

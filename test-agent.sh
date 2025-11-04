@@ -6,12 +6,12 @@ echo "=== Test de l'agent RemoteShell avec corrections ==="
 echo ""
 
 # Vérifier que l'agent existe
-if [ ! -f "build/remoteshell-agent" ]; then
+if [ ! -f "build/rms-agent" ]; then
     echo "❌ L'agent n'existe pas. Compilation nécessaire."
     exit 1
 fi
 
-echo "✅ Agent trouvé: build/remoteshell-agent"
+echo "✅ Agent trouvé: build/rms-agent"
 echo ""
 
 # Paramètres de test
@@ -32,7 +32,7 @@ echo "   (Appuyez sur Ctrl+C pour arrêter)"
 echo ""
 
 # Démarrer l'agent avec les logs de débogage
-./build/remoteshell-agent \
+./build/rms-agent \
     --server "$SERVER" \
     --id "$AGENT_ID" \
     --name "$AGENT_NAME" \

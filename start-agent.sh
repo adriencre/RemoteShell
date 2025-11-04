@@ -16,12 +16,12 @@ echo "   Token: $TOKEN"
 echo "   Nom: $NAME"
 echo ""
 
-if [ ! -f "build/remoteshell-agent" ]; then
+if [ ! -f "build/rms-agent" ]; then
     echo "❌ L'agent n'est pas compilé. Exécutez d'abord: make build"
     exit 1
 fi
 
-./build/remoteshell-agent --server "$SERVER" --token "$TOKEN" --name "$NAME"
+./build/rms-agent --server "$SERVER" --token "$TOKEN" --name "$NAME"
 
 
 

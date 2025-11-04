@@ -24,9 +24,9 @@ services:
       start_period: 40s
 
   # Agent RemoteShell (exemple)
-  remoteshell-agent:
+  rms-agent:
     build: .
-    container_name: remoteshell-agent
+    container_name: rms-agent
     environment:
       - REMOTESHELL_AGENT_ID=agent-docker-001
       - REMOTESHELL_AGENT_NAME=Docker Agent
@@ -36,7 +36,7 @@ services:
     depends_on:
       - remoteshell-server
     restart: unless-stopped
-    command: ["./remoteshell-agent", "--server", "remoteshell-server:8080", "--token", "docker-agent-token", "--name", "Docker Agent"]
+    command: ["./rms-agent", "--server", "remoteshell-server:8080", "--token", "docker-agent-token", "--name", "Docker Agent"]
     # Désactiver par défaut - décommentez pour activer
     profiles:
       - agent

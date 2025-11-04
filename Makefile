@@ -60,7 +60,7 @@ web: web-deps ## Build de l'interface web
 # Build de l'agent
 agent: go-deps ## Build de l'agent
 	@echo "$(BLUE)[INFO]$(NC) Build de l'agent..."
-	@go build -ldflags "-X main.version=$(VERSION)" -o $(BUILD_DIR)/remoteshell-agent ./cmd/agent
+	@go build -ldflags "-X main.version=$(VERSION)" -o $(BUILD_DIR)/rms-agent ./cmd/agent
 	@echo "$(GREEN)[SUCCESS]$(NC) Agent buildé"
 
 # Build du serveur
@@ -110,14 +110,14 @@ dev-web: web-deps ## Démarrer l'interface web en mode développement
 install: build ## Installer RemoteShell
 	@echo "$(BLUE)[INFO]$(NC) Installation de RemoteShell..."
 	@sudo cp $(BUILD_DIR)/remoteshell-server /usr/local/bin/
-	@sudo cp $(BUILD_DIR)/remoteshell-agent /usr/local/bin/
+	@sudo cp $(BUILD_DIR)/rms-agent /usr/local/bin/
 	@echo "$(GREEN)[SUCCESS]$(NC) RemoteShell installé"
 
 # Désinstallation
 uninstall: ## Désinstaller RemoteShell
 	@echo "$(BLUE)[INFO]$(NC) Désinstallation de RemoteShell..."
 	@sudo rm -f /usr/local/bin/remoteshell-server
-	@sudo rm -f /usr/local/bin/remoteshell-agent
+	@sudo rm -f /usr/local/bin/rms-agent
 	@echo "$(GREEN)[SUCCESS]$(NC) RemoteShell désinstallé"
 
 # Docker

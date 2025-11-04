@@ -156,7 +156,7 @@ create_packages() {
         
         # Copier les binaires
         cp "$BUILD_DIR/server-${os}-${arch}${EXT}" "$PACKAGE_DIR/remoteshell-server${EXT}"
-        cp "$BUILD_DIR/agent-${os}-${arch}${EXT}" "$PACKAGE_DIR/remoteshell-agent${EXT}"
+        cp "$BUILD_DIR/agent-${os}-${arch}${EXT}" "$PACKAGE_DIR/rms-agent${EXT}"
         
         # Copier l'interface web
         cp -r "$BUILD_DIR/web" "$PACKAGE_DIR/"
@@ -209,7 +209,7 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-        cat > "$package_dir/remoteshell-agent.service" << EOF
+        cat > "$package_dir/rms-agent.service" << EOF
 [Unit]
 Description=RemoteShell Agent
 After=network.target
@@ -219,7 +219,7 @@ Type=simple
 User=remoteshell
 Group=remoteshell
 WorkingDirectory=/opt/remoteshell
-ExecStart=/opt/remoteshell/remoteshell-agent --server localhost:8080 --token YOUR_TOKEN_HERE
+ExecStart=/opt/remoteshell/rms-agent --server localhost:8080 --token YOUR_TOKEN_HERE
 Restart=always
 RestartSec=5
 
@@ -244,18 +244,18 @@ fi
 # Créer le répertoire d'installation
 mkdir -p /opt/remoteshell
 cp remoteshell-server /opt/remoteshell/
-cp remoteshell-agent /opt/remoteshell/
+cp rms-agent /opt/remoteshell/
 cp -r web /opt/remoteshell/
 chown -R remoteshell:remoteshell /opt/remoteshell
 
 # Installer les services systemd
 cp remoteshell-server.service /etc/systemd/system/
-cp remoteshell-agent.service /etc/systemd/system/
+cp rms-agent.service /etc/systemd/system/
 systemctl daemon-reload
 
 echo "Installation terminée!"
 echo "Pour démarrer le serveur: systemctl start remoteshell-server"
-echo "Pour démarrer l'agent: systemctl start remoteshell-agent"
+echo "Pour démarrer l'agent: systemctl start rms-agent"
 echo "N'oubliez pas de configurer le token dans le service agent!"
 EOF
         chmod +x "$package_dir/install.sh"
@@ -269,7 +269,7 @@ echo Installation de RemoteShell...
 REM Créer le répertoire d'installation
 if not exist "C:\Program Files\RemoteShell" mkdir "C:\Program Files\RemoteShell"
 copy remoteshell-server.exe "C:\Program Files\RemoteShell\"
-copy remoteshell-agent.exe "C:\Program Files\RemoteShell\"
+copy rms-agent.exe "C:\Program Files\RemoteShell\"
 xcopy /E /I web "C:\Program Files\RemoteShell\web"
 
 echo Installation terminée!

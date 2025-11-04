@@ -20,7 +20,7 @@ RemoteShell est un système de gestion à distance des serveurs d'impression qui
 
 Le système est composé de 3 composants principaux :
 
-1. **Agent** (`remoteshell-agent`) : Service déployé sur chaque serveur d'impression
+1. **Agent** (`rms-agent`) : Service déployé sur chaque serveur d'impression
 2. **Serveur Central** (`remoteshell-server`) : Hub de gestion avec API REST et WebSocket
 3. **Interface Web** : Dashboard React pour l'administration
 
@@ -58,7 +58,7 @@ go mod download
 go build -o remoteshell-server ./cmd/server
 
 # Build de l'agent
-go build -o remoteshell-agent ./cmd/agent
+go build -o rms-agent ./cmd/agent
 ```
 
 #### 2. Interface Web (React)
@@ -92,13 +92,13 @@ npm run build
 
 ```bash
 # Connexion au serveur central
-./remoteshell-agent --server 192.168.1.100:8080 --token YOUR_TOKEN
+./rms-agent --server 192.168.1.100:8080 --token YOUR_TOKEN
 
 # Avec nom personnalisé
-./remoteshell-agent --server 192.168.1.100:8080 --token YOUR_TOKEN --name "Serveur-Impression-01"
+./rms-agent --server 192.168.1.100:8080 --token YOUR_TOKEN --name "Serveur-Impression-01"
 
 # Avec TLS
-./remoteshell-agent --server 192.168.1.100:443 --token YOUR_TOKEN --tls
+./rms-agent --server 192.168.1.100:443 --token YOUR_TOKEN --tls
 ```
 
 ### Interface Web
@@ -224,19 +224,19 @@ Le script d'installation vous demandera :
 
 ```bash
 # Vérifier le statut
-sudo systemctl status remoteshell-agent
+sudo systemctl status rms-agent
 
 # Voir les logs en temps réel
-sudo journalctl -u remoteshell-agent -f
+sudo journalctl -u rms-agent -f
 
 # Redémarrer le service
-sudo systemctl restart remoteshell-agent
+sudo systemctl restart rms-agent
 
 # Arrêter le service
-sudo systemctl stop remoteshell-agent
+sudo systemctl stop rms-agent
 
 # Désactiver le démarrage automatique
-sudo systemctl disable remoteshell-agent
+sudo systemctl disable rms-agent
 ```
 
 ### Mise à jour de l'agent
@@ -281,30 +281,30 @@ sudo systemctl start remoteshell-server
 
 ```bash
 # Copier l'exécutable
-sudo cp ./build/remoteshell-agent /usr/local/bin/
+sudo cp ./build/rms-agent /usr/local/bin/
 
 # Créer la configuration
 sudo mkdir -p /etc/remoteshell
 sudo nano /etc/remoteshell/agent.conf
 
 # Créer le fichier de service en utilisant le template
-sudo cp ./systemd/remoteshell-agent.service /etc/systemd/system/
-sudo nano /etc/systemd/system/remoteshell-agent.service
+sudo cp ./systemd/rms-agent.service /etc/systemd/system/
+sudo nano /etc/systemd/system/rms-agent.service
 
 # Recharger systemd
 sudo systemctl daemon-reload
 
 # Activer et démarrer
-sudo systemctl enable remoteshell-agent
-sudo systemctl start remoteshell-agent
+sudo systemctl enable rms-agent
+sudo systemctl start rms-agent
 ```
 
 ### Localisation des fichiers
 
-- **Binaires** : `/usr/local/bin/remoteshell-agent`
+- **Binaires** : `/usr/local/bin/rms-agent`
 - **Configuration** : `/etc/remoteshell/agent.conf`
-- **Service systemd** : `/etc/systemd/system/remoteshell-agent.service`
-- **Logs** : `journalctl -u remoteshell-agent`
+- **Service systemd** : `/etc/systemd/system/rms-agent.service`
+- **Logs** : `journalctl -u rms-agent`
 - **Répertoire de travail** : `/opt/remoteshell`
 
 ### Windows (Service)
@@ -317,7 +317,7 @@ sc create RemoteShellServer binPath= "C:\Program Files\RemoteShell\remoteshell-s
 sc start RemoteShellServer
 
 # Installer le service agent
-sc create RemoteShellAgent binPath= "C:\Program Files\RemoteShell\remoteshell-agent.exe --server localhost:8080 --token YOUR_TOKEN" start= auto
+sc create RemoteShellAgent binPath= "C:\Program Files\RemoteShell\rms-agent.exe --server localhost:8080 --token YOUR_TOKEN" start= auto
 
 # Démarrer le service
 sc start RemoteShellAgent
@@ -358,7 +358,7 @@ sudo ufw allow 443/tcp
 Les logs sont disponibles via :
 
 - **Serveur** : `journalctl -u remoteshell-server -f`
-- **Agent** : `journalctl -u remoteshell-agent -f`
+- **Agent** : `journalctl -u rms-agent -f`
 
 ### Métriques
 

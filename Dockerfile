@@ -18,7 +18,7 @@ COPY . .
 
 # Build des binaires
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o remoteshell-server ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o remoteshell-agent ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o rms-agent ./cmd/agent
 
 # Build de l'interface web
 FROM node:18-alpine AS web-builder
@@ -52,7 +52,7 @@ WORKDIR /app
 
 # Copier les binaires depuis le builder
 COPY --from=builder /app/remoteshell-server .
-COPY --from=builder /app/remoteshell-agent .
+COPY --from=builder /app/rms-agent .
 
 # Copier l'interface web depuis le web-builder
 RUN mkdir -p ./build/web

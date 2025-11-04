@@ -62,7 +62,7 @@ func main() {
 	}
 
 	// Créer le gestionnaire de tokens avec la clé depuis la config
-	tokenManager := auth.NewTokenManager(config.AuthToken, "remoteshell-agent")
+	tokenManager := auth.NewTokenManager(config.AuthToken, "rms-agent")
 
 	// Créer et démarrer le client agent
 	client := agent.NewClient(config, tokenManager)

@@ -95,7 +95,7 @@ sudo tail -f /var/log/nginx/access.log
 Sur l'agent :
 ```bash
 # Logs de l'agent
-journalctl -u remoteshell-agent -f
+journalctl -u rms-agent -f
 ```
 
 ### Messages d'erreur courants

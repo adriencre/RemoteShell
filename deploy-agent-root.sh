@@ -8,7 +8,7 @@ set -e
 # Configuration par défaut
 DEFAULT_IP="10.0.0.72"
 DEFAULT_USER="ServeurImpression"
-AGENT_NAME="remoteshell-agent-root"
+AGENT_NAME="rms-agent-root"
 
 # Paramètres
 SERVER_IP=${1:-$DEFAULT_IP}
@@ -27,13 +27,13 @@ echo "📡 Serveur: $SERVER_USER@$SERVER_IP"
 echo ""
 
 # Vérifier que l'agent existe
-if [ ! -f "./build/remoteshell-agent" ]; then
+if [ ! -f "./build/rms-agent" ]; then
     echo "❌ Erreur: L'agent n'existe pas. Compilez d'abord avec 'make agent'"
     exit 1
 fi
 
 echo "📦 Copie de l'agent vers le serveur..."
-scp ./build/remoteshell-agent $SERVER_USER@$SERVER_IP:/tmp/$AGENT_NAME
+scp ./build/rms-agent $SERVER_USER@$SERVER_IP:/tmp/$AGENT_NAME
 
 if [ $? -eq 0 ]; then
     echo "✅ Agent copié avec succès"
@@ -74,7 +74,7 @@ if [ "$INSTALL_SERVICE" = true ]; then
 cd /tmp
 # Créer un répertoire temporaire avec tous les fichiers nécessaires
 mkdir -p build
-mv remoteshell-agent-root build/remoteshell-agent
+mv rms-agent-root build/rms-agent
 chmod +x install-service.sh
 # Exporter les variables pour l'installation non-interactive
 export SERVER_URL="$CONFIG_SERVER_URL"
@@ -89,10 +89,10 @@ ENDSSH
         echo "✅ Service installé avec succès !"
         echo ""
         echo "📊 Pour vérifier le statut du service:"
-        echo "   ssh $SERVER_USER@$SERVER_IP 'sudo systemctl status remoteshell-agent'"
+        echo "   ssh $SERVER_USER@$SERVER_IP 'sudo systemctl status rms-agent'"
         echo ""
         echo "📝 Pour voir les logs en temps réel:"
-        echo "   ssh $SERVER_USER@$SERVER_IP 'sudo journalctl -u remoteshell-agent -f'"
+        echo "   ssh $SERVER_USER@$SERVER_IP 'sudo journalctl -u rms-agent -f'"
     else
         echo ""
         echo "❌ Erreur lors de l'installation du service"
@@ -103,15 +103,15 @@ else
     echo "1. Connectez-vous au serveur: ssh $SERVER_USER@$SERVER_IP"
     echo "2. Arrêtez l'ancien agent (Ctrl+C si en cours)"
     echo "3. Copiez le nouvel agent:"
-    echo "   sudo cp /tmp/$AGENT_NAME /home/$SERVER_USER/remoteshell-agent"
-    echo "   sudo chmod +x /home/$SERVER_USER/remoteshell-agent"
+    echo "   sudo cp /tmp/$AGENT_NAME /home/$SERVER_USER/rms-agent"
+    echo "   sudo chmod +x /home/$SERVER_USER/rms-agent"
     echo ""
     echo "4. Configurez sudo sans mot de passe (optionnel mais recommandé):"
     echo "   sudo visudo"
     echo "   Ajoutez: $SERVER_USER ALL=(ALL) NOPASSWD: ALL"
     echo ""
     echo "5. Lancez le nouvel agent:"
-    echo "   ./remoteshell-agent --server 10.0.0.59:8081 --id \"serveur-impression-01\" --name \"Serveur d'impression principal\" --token \"test-token\""
+    echo "   ./rms-agent --server 10.0.0.59:8081 --id \"serveur-impression-01\" --name \"Serveur d'impression principal\" --token \"test-token\""
     echo ""
     echo "6. OU installez-le comme service systemd (recommandé):"
     echo "   ./deploy-agent-root.sh $SERVER_IP $SERVER_USER --install-service"

@@ -31,7 +31,7 @@ echo -e "   Server URL: ${SERVER_URL}"
 echo ""
 
 # Vérifier que l agent est compilé
-if [ ! -f "build/remoteshell-agent" ]; then
+if [ ! -f "build/rms-agent" ]; then
     echo -e "${YELLOW}⚠️  L agent n est pas compilé. Compilation en cours...${NC}"
     make agent
     if [ $? -ne 0 ]; then
@@ -41,13 +41,13 @@ if [ ! -f "build/remoteshell-agent" ]; then
 fi
 
 # Afficher la taille de l agent
-SIZE=$(stat -c%s "build/remoteshell-agent" 2>/dev/null || stat -f%z "build/remoteshell-agent" 2>/dev/null)
+SIZE=$(stat -c%s "build/rms-agent" 2>/dev/null || stat -f%z "build/rms-agent" 2>/dev/null)
 echo -e "${BLUE}📦 Taille de l agent: $(numfmt --to=iec-i --suffix=B $SIZE 2>/dev/null || echo "${SIZE} bytes")${NC}"
 echo ""
 
 # Copier l agent vers le serveur distant
 echo -e "${BLUE}📤 Copie de l agent vers ${DEFAULT_USER}@${DEFAULT_HOST}...${NC}"
-scp ./build/remoteshell-agent ${DEFAULT_USER}@${DEFAULT_HOST}:${REMOTE_HOME}/remoteshell-agent
+scp ./build/rms-agent ${DEFAULT_USER}@${DEFAULT_HOST}:${REMOTE_HOME}/rms-agent
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Erreur lors de la copie de l agent${NC}"
@@ -78,18 +78,18 @@ AGENT_NAME=\$(echo "${SSH_AGENT_NAME}" | base64 -d)
 TOKEN=\$(echo "${SSH_TOKEN}" | base64 -d)
 
 # Rendre l agent exécutable
-chmod +x ~/remoteshell-agent
+chmod +x ~/rms-agent
 
 # Arrêter le service systemd s il existe et est actif
-if sudo systemctl is-active --quiet remoteshell-agent 2>/dev/null; then
+if sudo systemctl is-active --quiet rms-agent 2>/dev/null; then
     echo "🛑 Arrêt du service systemd existant..."
-    sudo systemctl stop remoteshell-agent || true
+    sudo systemctl stop rms-agent || true
 fi
 
-# Tuer tous les processus remoteshell-agent en cours d exécution
-if pgrep -f remoteshell-agent > /dev/null 2>&1; then
-    echo "🛑 Arrêt des processus remoteshell-agent en cours..."
-    sudo pkill -9 -f remoteshell-agent || true
+# Tuer tous les processus rms-agent en cours d exécution
+if pgrep -f rms-agent > /dev/null 2>&1; then
+    echo "🛑 Arrêt des processus rms-agent en cours..."
+    sudo pkill -9 -f rms-agent || true
     sleep 1
 fi
 
@@ -99,8 +99,8 @@ sudo mkdir -p /etc/remoteshell
 
 # Copier l agent dans /usr/local/bin
 echo "📋 Copie du nouvel agent..."
-sudo cp ~/remoteshell-agent /usr/local/bin/remoteshell-agent
-sudo chmod +x /usr/local/bin/remoteshell-agent
+sudo cp ~/rms-agent /usr/local/bin/rms-agent
+sudo chmod +x /usr/local/bin/rms-agent
 
 # Créer le fichier de configuration
 echo "SERVER_URL=${SERVER_URL}" > /tmp/agent.conf
@@ -115,7 +115,7 @@ ESCAPED_AGENT_ID=$(echo "${AGENT_ID}" | sed 's/[[\.*^$()+?{|]/\\&/g')
 ESCAPED_AGENT_NAME=$(echo "${AGENT_NAME}" | sed 's/[[\.*^$()+?{|]/\\&/g')
 ESCAPED_TOKEN=$(echo "${TOKEN}" | sed 's/[[\.*^$()+?{|]/\\&/g')
 
-cat > /tmp/remoteshell-agent.service << 'SERVICE'
+cat > /tmp/rms-agent.service << 'SERVICE'
 [Unit]
 Description=RemoteShell Agent - Gestionnaire de serveurs d impression
 Documentation=https://github.com/votre-org/remoteshell
@@ -125,44 +125,44 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/remoteshell-agent --server SERVER_URL_PLACEHOLDER --id "AGENT_ID_PLACEHOLDER" --name "AGENT_NAME_PLACEHOLDER" --token "TOKEN_PLACEHOLDER"
+ExecStart=/usr/local/bin/rms-agent --server SERVER_URL_PLACEHOLDER --id "AGENT_ID_PLACEHOLDER" --name "AGENT_NAME_PLACEHOLDER" --token "TOKEN_PLACEHOLDER"
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=remoteshell-agent
+SyslogIdentifier=rms-agent
 
 [Install]
 WantedBy=multi-user.target
 SERVICE
 
 # Remplacer les placeholders par les vraies valeurs
-sed -i "s|SERVER_URL_PLACEHOLDER|${ESCAPED_SERVER_URL}|g" /tmp/remoteshell-agent.service
-sed -i "s|AGENT_ID_PLACEHOLDER|${ESCAPED_AGENT_ID}|g" /tmp/remoteshell-agent.service
-sed -i "s|AGENT_NAME_PLACEHOLDER|${ESCAPED_AGENT_NAME}|g" /tmp/remoteshell-agent.service
-sed -i "s|TOKEN_PLACEHOLDER|${ESCAPED_TOKEN}|g" /tmp/remoteshell-agent.service
+sed -i "s|SERVER_URL_PLACEHOLDER|${ESCAPED_SERVER_URL}|g" /tmp/rms-agent.service
+sed -i "s|AGENT_ID_PLACEHOLDER|${ESCAPED_AGENT_ID}|g" /tmp/rms-agent.service
+sed -i "s|AGENT_NAME_PLACEHOLDER|${ESCAPED_AGENT_NAME}|g" /tmp/rms-agent.service
+sed -i "s|TOKEN_PLACEHOLDER|${ESCAPED_TOKEN}|g" /tmp/rms-agent.service
 
-sudo mv /tmp/remoteshell-agent.service /etc/systemd/system/remoteshell-agent.service
+sudo mv /tmp/rms-agent.service /etc/systemd/system/rms-agent.service
 
 # Recharger systemd
 echo "🔄 Rechargement de systemd..."
 sudo systemctl daemon-reload
 
 # Arrêter l ancien service s il existe
-if systemctl is-active --quiet remoteshell-agent 2>/dev/null; then
+if systemctl is-active --quiet rms-agent 2>/dev/null; then
     echo "🛑 Arrêt de l ancien service..."
-    sudo systemctl stop remoteshell-agent
+    sudo systemctl stop rms-agent
 fi
 
 # Désactiver l ancien service s il existe
-if systemctl is-enabled --quiet remoteshell-agent 2>/dev/null; then
-    sudo systemctl disable remoteshell-agent
+if systemctl is-enabled --quiet rms-agent 2>/dev/null; then
+    sudo systemctl disable rms-agent
 fi
 
 # Activer et démarrer le nouveau service
 echo "🚀 Activation et démarrage du service..."
-sudo systemctl enable remoteshell-agent
-sudo systemctl start remoteshell-agent
+sudo systemctl enable rms-agent
+sudo systemctl start rms-agent
 
 # Attendre un peu pour vérifier que ça démarre
 sleep 2
@@ -170,7 +170,7 @@ sleep 2
 # Afficher le statut
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-sudo systemctl status remoteshell-agent --no-pager -l || true
+sudo systemctl status rms-agent --no-pager -l || true
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ENDSSH
 
@@ -180,16 +180,16 @@ if [ $? -eq 0 ]; then
     echo ""
     echo -e "${BLUE}📊 Commandes utiles:${NC}"
     echo "   Vérifier le statut:"
-    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl status remoteshell-agent\""
+    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl status rms-agent\""
     echo ""
     echo "   Voir les logs en temps réel:"
-    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo journalctl -u remoteshell-agent -f\""
+    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo journalctl -u rms-agent -f\""
     echo ""
     echo "   Redémarrer le service:"
-    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl restart remoteshell-agent\""
+    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl restart rms-agent\""
     echo ""
     echo "   Arrêter le service:"
-    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl stop remoteshell-agent\""
+    echo "   ssh ${DEFAULT_USER}@${DEFAULT_HOST} \"sudo systemctl stop rms-agent\""
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}✅ Déploiement terminé !${NC}"

@@ -65,8 +65,8 @@ const Download: React.FC = () => {
                 <p><strong>Linux/Mac:</strong></p>
                 <ol className="list-decimal list-inside space-y-1 ml-2">
                   <li>Téléchargez le fichier agent</li>
-                  <li>Rendez-le exécutable: <code className="bg-gray-100 px-1 rounded">chmod +x remoteshell-agent</code></li>
-                  <li>Exécutez: <code className="bg-gray-100 px-1 rounded">./remoteshell-agent --server SERVEUR:PORT --id ID --name "Nom" --token TOKEN</code></li>
+                  <li>Rendez-le exécutable: <code className="bg-gray-100 px-1 rounded">chmod +x rms-agent</code></li>
+                  <li>Exécutez: <code className="bg-gray-100 px-1 rounded">./rms-agent --server SERVEUR:PORT --id ID --name "Nom" --token TOKEN</code></li>
                 </ol>
               </div>
             </div>
