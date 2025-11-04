@@ -3,6 +3,9 @@
 # Script d'installation automatique de l'agent RemoteShell
 # Ce script télécharge l'agent et l'installe en service systemd
 # Usage: curl -sSL http://VOTRE_SERVEUR:PORT/download/install-agent.sh | sudo bash
+#
+# Ce script est autonome et pose toutes les questions nécessaires.
+# Il n'utilise pas de variables d'environnement.
 
 set -e
 
@@ -18,31 +21,40 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Détecter l'URL du serveur
-# Si la variable d'environnement est définie, l'utiliser
-if [ -n "$REMOTESHELL_SERVER_URL" ]; then
-    SERVER_URL="$REMOTESHELL_SERVER_URL"
-else
-    # Demander l'URL du serveur
-    echo "📋 Configuration requise:"
-    read -p "URL du serveur RemoteShell (ex: 10.0.0.59:8081 ou http://10.0.0.59:8081): " SERVER_URL
-fi
+# Demander toutes les informations nécessaires
+echo "📋 Configuration de l'agent RemoteShell"
+echo ""
+echo "Ce script va vous poser quelques questions pour configurer l'agent."
+echo ""
 
-if [ -z "$SERVER_URL" ]; then
-    echo "❌ L'URL du serveur est requise"
-    echo "   Vous pouvez la spécifier avec: REMOTESHELL_SERVER_URL=10.0.0.59:8081 curl -sSL ... | sudo bash"
-    exit 1
-fi
+# Demander l'URL du serveur (utilisée pour télécharger l'agent ET pour la connexion)
+# Valeur par défaut
+DEFAULT_SERVER_URL="rms.lfgroup.fr:8081"
 
-# Normaliser l'URL (ajouter http:// si nécessaire)
+while [ -z "$SERVER_URL" ]; do
+    read -p "URL du serveur RemoteShell [défaut: $DEFAULT_SERVER_URL]: " SERVER_URL
+    # Si vide, utiliser la valeur par défaut
+    if [ -z "$SERVER_URL" ]; then
+        SERVER_URL="$DEFAULT_SERVER_URL"
+        echo "✅ Utilisation de l'URL par défaut: $SERVER_URL"
+    fi
+done
+echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la connexion de l'agent au serveur."
+echo ""
+
+# Normaliser l'URL (ajouter http:// ou https:// si nécessaire)
 if [[ "$SERVER_URL" == http://* ]] || [[ "$SERVER_URL" == https://* ]]; then
     DOWNLOAD_BASE="$SERVER_URL"
     # Extraire host:port pour la configuration
     SERVER_HOST_PORT="${SERVER_URL#http://}"
     SERVER_HOST_PORT="${SERVER_HOST_PORT#https://}"
 else
-    # Supposer HTTP si pas de protocole
-    DOWNLOAD_BASE="http://$SERVER_URL"
+    # Utiliser HTTPS pour rms.lfgroup.fr, HTTP pour les autres
+    if [[ "$SERVER_URL" == *"rms.lfgroup.fr"* ]]; then
+        DOWNLOAD_BASE="https://$SERVER_URL"
+    else
+        DOWNLOAD_BASE="http://$SERVER_URL"
+    fi
     SERVER_HOST_PORT="$SERVER_URL"
 fi
 
@@ -93,27 +105,34 @@ echo "✅ Agent téléchargé avec succès"
 echo ""
 
 # Demander les paramètres de configuration
+echo ""
 echo "📋 Configuration de l'agent"
 echo ""
 
-read -p "ID de l'agent (ex: serveur-impression-01): " AGENT_ID
-if [ -z "$AGENT_ID" ]; then
-    echo "❌ L'ID de l'agent est requis"
-    exit 1
-fi
+# Demander l'ID de l'agent
+while [ -z "$AGENT_ID" ]; do
+    read -p "ID de l'agent (ex: serveur-impression-01): " AGENT_ID
+    if [ -z "$AGENT_ID" ]; then
+        echo "⚠️  L'ID de l'agent ne peut pas être vide. Veuillez réessayer."
+    fi
+done
 
-read -p "Nom de l'agent (ex: Serveur d'impression principal): " AGENT_NAME
-if [ -z "$AGENT_NAME" ]; then
-    echo "❌ Le nom de l'agent est requis"
-    exit 1
-fi
+# Demander le nom de l'agent
+while [ -z "$AGENT_NAME" ]; do
+    read -p "Nom de l'agent (ex: Serveur d'impression principal): " AGENT_NAME
+    if [ -z "$AGENT_NAME" ]; then
+        echo "⚠️  Le nom de l'agent ne peut pas être vide. Veuillez réessayer."
+    fi
+done
 
-read -sp "Token d'authentification: " AUTH_TOKEN
-echo ""
-if [ -z "$AUTH_TOKEN" ]; then
-    echo "❌ Le token d'authentification est requis"
-    exit 1
-fi
+# Demander le token d'authentification
+while [ -z "$AUTH_TOKEN" ]; do
+    read -sp "Token d'authentification: " AUTH_TOKEN
+    echo ""
+    if [ -z "$AUTH_TOKEN" ]; then
+        echo "⚠️  Le token d'authentification ne peut pas être vide. Veuillez réessayer."
+    fi
+done
 
 echo ""
 echo "🔧 Installation en cours..."
