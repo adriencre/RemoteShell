@@ -3,7 +3,9 @@ import { AuthProvider } from './contexts/AuthContext'
 import { WebSocketProvider } from './contexts/WebSocketContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
+import Agents from './pages/Agents'
 import AgentDetail from './pages/AgentDetail'
 import Terminal from './pages/Terminal'
 import FileManager from './pages/FileManager'
@@ -20,6 +22,7 @@ function App() {
           <div className="min-h-screen bg-gray-50">
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/" element={
                 <ProtectedRoute>
                   <Layout />
@@ -27,6 +30,7 @@ function App() {
               }>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
+                <Route path="agents" element={<Agents />} />
                 <Route path="agent/:id" element={<AgentDetail />} />
                 <Route path="agent/:id/terminal" element={<Terminal />} />
                 <Route path="agent/:id/files" element={<FileManager />} />

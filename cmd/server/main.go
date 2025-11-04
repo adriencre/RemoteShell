@@ -14,15 +14,15 @@ import (
 )
 
 func main() {
-	// Configuration des flags
+	// Configuration des flags (sans valeurs par défaut pour ne pas écraser les env vars)
 	var (
-		host       = flag.String("host", "0.0.0.0", "Adresse d'écoute")
-		port       = flag.Int("port", 8080, "Port d'écoute")
-		tls        = flag.Bool("tls", false, "Utiliser TLS")
-		certFile   = flag.String("cert", "", "Fichier de certificat")
-		keyFile    = flag.String("key", "", "Fichier de clé privée")
-		secretKey  = flag.String("secret", "", "Clé secrète JWT")
-		dbPath     = flag.String("db", "remoteshell.db", "Chemin de la base de données")
+		host       = flag.String("host", "", "Adresse d'écoute (défaut depuis REMOTESHELL_SERVER_HOST)")
+		port       = flag.Int("port", 0, "Port d'écoute (défaut depuis REMOTESHELL_SERVER_PORT)")
+		tls        = flag.Bool("tls", false, "Utiliser TLS (défaut depuis REMOTESHELL_SERVER_TLS)")
+		certFile   = flag.String("cert", "", "Fichier de certificat (défaut depuis REMOTESHELL_CERT_FILE)")
+		keyFile    = flag.String("key", "", "Fichier de clé privée (défaut depuis REMOTESHELL_KEY_FILE)")
+		secretKey  = flag.String("secret", "", "Clé secrète JWT (défaut depuis REMOTESHELL_AUTH_TOKEN)")
+		dbPath     = flag.String("db", "", "Chemin de la base de données (défaut depuis REMOTESHELL_DB_PATH)")
 		verbose    = flag.Bool("verbose", false, "Mode verbeux")
 	)
 	flag.Parse()
@@ -31,13 +31,32 @@ func main() {
 	config := common.DefaultConfig()
 	config.LoadFromEnv()
 
-	// Appliquer les flags
-	config.ServerHost = *host
-	config.ServerPort = *port
-	config.ServerTLS = *tls
-	config.CertFile = *certFile
-	config.KeyFile = *keyFile
-	config.DatabasePath = *dbPath
+	// Appliquer les flags seulement s'ils sont fournis (pour ne pas écraser les env vars)
+	if *host != "" {
+		config.ServerHost = *host
+	}
+	if *port != 0 {
+		config.ServerPort = *port
+	}
+	// Pour les booléens, on vérifie si le flag a été fourni explicitement
+	flagTLSProvided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "tls" {
+			flagTLSProvided = true
+		}
+	})
+	if flagTLSProvided {
+		config.ServerTLS = *tls
+	}
+	if *certFile != "" {
+		config.CertFile = *certFile
+	}
+	if *keyFile != "" {
+		config.KeyFile = *keyFile
+	}
+	if *dbPath != "" {
+		config.DatabasePath = *dbPath
+	}
 	if *secretKey != "" {
 		config.AuthToken = *secretKey
 	}
@@ -52,7 +71,7 @@ func main() {
 	hub := server.NewHub()
 
 	// Créer le serveur API
-	apiServer := server.NewAPIServer(hub, tokenManager)
+	apiServer := server.NewAPIServer(hub, tokenManager, config.AuthToken, config)
 
 	// Démarrer le hub
 	go hub.Run()

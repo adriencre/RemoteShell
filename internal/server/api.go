@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -20,15 +21,39 @@ type APIServer struct {
 	tokenManager *auth.TokenManager
 	router       *gin.Engine
 	wsServer     *WebSocketServer
+	config       *common.Config
+	oauth2Config *auth.OAuth2Config
 }
 
 // NewAPIServer crée un nouveau serveur API
-func NewAPIServer(hub *Hub, tokenManager *auth.TokenManager) *APIServer {
+func NewAPIServer(hub *Hub, tokenManager *auth.TokenManager, authToken string, config *common.Config) *APIServer {
 	api := &APIServer{
 		hub:          hub,
 		tokenManager: tokenManager,
 		router:       gin.Default(),
-		wsServer:     NewWebSocketServer(hub, tokenManager),
+		wsServer:     NewWebSocketServer(hub, tokenManager, authToken),
+		config:       config,
+	}
+
+	// Initialiser OAuth2 si configuré
+	if config.OAuth2Enabled && config.OAuth2BaseURL != "" && config.OAuth2ClientID != "" {
+		scopes := []string{"openid", "profile", "email"}
+		if config.OAuth2Scopes != "" {
+			// Parser les scopes séparés par des virgules
+			scopeList := strings.Split(config.OAuth2Scopes, ",")
+			for i, s := range scopeList {
+				scopeList[i] = strings.TrimSpace(s)
+			}
+			scopes = scopeList
+		}
+		api.oauth2Config = auth.NewOAuth2Config(
+			config.OAuth2Provider,
+			config.OAuth2ClientID,
+			config.OAuth2ClientSecret,
+			config.OAuth2BaseURL,
+			config.OAuth2RedirectURL,
+			scopes,
+		)
 	}
 
 	api.setupRoutes()
@@ -53,7 +78,16 @@ func (api *APIServer) setupRoutes() {
 
 	// Routes publiques
 	api.router.GET("/health", api.healthCheck)
-	api.router.POST("/api/auth/login", api.login)
+
+	// Routes OAuth2/Authentik
+	if api.oauth2Config != nil {
+		api.router.GET("/api/auth/oauth2/login", api.oauth2Login)
+		api.router.GET("/api/auth/oauth2/callback", api.oauth2Callback)
+		api.router.GET("/api/auth/oauth2/config", api.oauth2ConfigEndpoint)
+	} else {
+		// Route de login classique seulement si OAuth2 n'est pas activé
+		api.router.POST("/api/auth/login", api.login)
+	}
 
 	// WebSocket pour les agents (sans authentification)
 	api.router.GET("/ws", api.wsServer.HandleWebSocket)
@@ -223,8 +257,8 @@ func (api *APIServer) updateAgentMetadata(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "métadonnées mises à jour",
-		"agent_id": agentID,
+		"message":   "métadonnées mises à jour",
+		"agent_id":  agentID,
 		"franchise": metadata.Franchise,
 		"category":  metadata.Category,
 	})
@@ -895,5 +929,139 @@ func (api *APIServer) getLogContent(c *gin.Context) {
 		"source":   source,
 		"count":    0,
 		"agent_id": agentID,
+	})
+}
+
+// oauth2Login redirige vers Authentik pour l'authentification
+func (api *APIServer) oauth2Login(c *gin.Context) {
+	if api.oauth2Config == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OAuth2 non configuré"})
+		return
+	}
+
+	// Générer un state pour la sécurité
+	state, err := auth.GenerateState()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de génération du state"})
+		return
+	}
+
+	// Stocker le state dans un cookie sécurisé
+	c.SetCookie("oauth2_state", state, 600, "/", "", api.config.ServerTLS, true)
+
+	// Rediriger vers Authentik
+	authURL := api.oauth2Config.GetAuthURL(state)
+	if authURL == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de génération de l'URL d'authentification"})
+		return
+	}
+
+	log.Printf("[OAuth2] Redirection vers Authentik - Redirect URI: %s", api.config.OAuth2RedirectURL)
+	log.Printf("[OAuth2] URL d'authentification complète: %s", authURL)
+	c.Redirect(http.StatusFound, authURL)
+}
+
+// oauth2Callback gère le callback OAuth2 depuis Authentik
+func (api *APIServer) oauth2Callback(c *gin.Context) {
+	if api.oauth2Config == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OAuth2 non configuré"})
+		return
+	}
+
+	// Récupérer le code et le state
+	code := c.Query("code")
+	state := c.Query("state")
+
+	if code == "" || state == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code ou state manquant"})
+		return
+	}
+
+	// Vérifier le state depuis le cookie
+	cookieState, err := c.Cookie("oauth2_state")
+	if err != nil || cookieState == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "state manquant ou invalide"})
+		return
+	}
+
+	// Valider le state
+	if err := auth.ValidateState(state, cookieState); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "state invalide"})
+		return
+	}
+
+	// Supprimer le cookie
+	c.SetCookie("oauth2_state", "", -1, "/", "", api.config.ServerTLS, true)
+
+	// Échanger le code contre un token
+	ctx := context.Background()
+	token, err := api.oauth2Config.ExchangeCode(ctx, code)
+	if err != nil {
+		log.Printf("Erreur d'échange du code OAuth2: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'authentification"})
+		return
+	}
+
+	// Récupérer les informations utilisateur
+	userInfo, err := api.oauth2Config.GetUserInfo(ctx, token)
+	if err != nil {
+		log.Printf("Erreur de récupération des infos utilisateur: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de récupération des informations utilisateur"})
+		return
+	}
+
+	// Générer un token JWT pour notre application
+	// Utiliser le sub (subject) comme ID utilisateur
+	userID := userInfo.Sub
+	if userID == "" {
+		userID = userInfo.Email
+	}
+	if userID == "" {
+		userID = userInfo.PreferredUsername
+	}
+
+	userName := userInfo.Name
+	if userName == "" {
+		userName = userInfo.Email
+	}
+	if userName == "" {
+		userName = userInfo.PreferredUsername
+	}
+
+	// Déterminer le rôle (peut être basé sur les groupes)
+	role := "user"
+	if len(userInfo.Groups) > 0 {
+		// Chercher un groupe admin
+		for _, group := range userInfo.Groups {
+			if strings.Contains(strings.ToLower(group), "admin") {
+				role = "admin"
+				break
+			}
+		}
+	}
+
+	// Générer le token JWT
+	jwtToken, err := api.tokenManager.GenerateToken(userID, userName, role, 24*time.Hour)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de génération du token"})
+		return
+	}
+
+	// Rediriger vers le frontend avec le token dans l'URL
+	// Le frontend récupérera le token depuis l'URL
+	frontendURL := "/auth/callback?token=" + jwtToken
+	c.Redirect(http.StatusFound, frontendURL)
+}
+
+// oauth2ConfigEndpoint retourne la configuration OAuth2 pour le frontend
+func (api *APIServer) oauth2ConfigEndpoint(c *gin.Context) {
+	if api.oauth2Config == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OAuth2 non configuré"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":  true,
+		"loginUrl": "/api/auth/oauth2/login",
 	})
 }

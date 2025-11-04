@@ -1,0 +1,12 @@
+#!/bin/bash
+export REMOTESHELL_SERVER_HOST=0.0.0.0
+export REMOTESHELL_SERVER_PORT=8081
+export REMOTESHELL_AUTH_TOKEN=test-token
+export REMOTESHELL_OAUTH2_ENABLED=true
+export REMOTESHELL_OAUTH2_PROVIDER=authentik
+export REMOTESHELL_OAUTH2_CLIENT_ID=wLuJP9g1hn8HihS1LuGDu6TSfok6z00dWx6P3XhE
+export REMOTESHELL_OAUTH2_CLIENT_SECRET=OKe5eQhw7o6OjKqJ5bGSXIZY5gLfzzjvufP15dsk4MckretVFktmWfw7uIh7XDVfvEwBVR1OwngTkPq5skMiuRVJBCIynAadtOTc0QdLSfWkYqRHUF59nfmXCx95iAze
+export REMOTESHELL_OAUTH2_BASE_URL=https://auth.lfgroup.fr
+export REMOTESHELL_OAUTH2_REDIRECT_URL=http://localhost:8081/api/auth/oauth2/callback
+
+./build/remoteshell-server
