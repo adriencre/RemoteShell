@@ -25,6 +25,15 @@ type Config struct {
 	AuthToken string
 	TokenFile string
 
+	// Configuration OAuth2/Authentik
+	OAuth2Enabled      bool
+	OAuth2Provider     string // "authentik"
+	OAuth2ClientID     string
+	OAuth2ClientSecret string
+	OAuth2BaseURL      string // URL d'Authentik (ex: https://auth.example.com)
+	OAuth2RedirectURL  string // URL de callback
+	OAuth2Scopes       string // Scopes séparés par des virgules
+
 	// Configuration base de données
 	DatabasePath string
 
@@ -92,6 +101,48 @@ func (c *Config) LoadFromEnv() {
 	}
 	if logFile := os.Getenv("REMOTESHELL_LOG_FILE"); logFile != "" {
 		c.LogFile = logFile
+	}
+	if reconnectDelay := os.Getenv("REMOTESHELL_RECONNECT_DELAY"); reconnectDelay != "" {
+		if d, err := time.ParseDuration(reconnectDelay); err == nil {
+			c.ReconnectDelay = d
+		}
+	}
+	if heartbeatInterval := os.Getenv("REMOTESHELL_HEARTBEAT_INTERVAL"); heartbeatInterval != "" {
+		if d, err := time.ParseDuration(heartbeatInterval); err == nil {
+			c.HeartbeatInterval = d
+		}
+	}
+	if maxFileSize := os.Getenv("REMOTESHELL_MAX_FILE_SIZE"); maxFileSize != "" {
+		if size, err := strconv.ParseInt(maxFileSize, 10, 64); err == nil {
+			c.MaxFileSize = size
+		}
+	}
+	if chunkSize := os.Getenv("REMOTESHELL_CHUNK_SIZE"); chunkSize != "" {
+		if size, err := strconv.Atoi(chunkSize); err == nil {
+			c.ChunkSize = size
+		}
+	}
+	// Configuration OAuth2/Authentik
+	if enabled := os.Getenv("REMOTESHELL_OAUTH2_ENABLED"); enabled == "true" {
+		c.OAuth2Enabled = true
+	}
+	if provider := os.Getenv("REMOTESHELL_OAUTH2_PROVIDER"); provider != "" {
+		c.OAuth2Provider = provider
+	}
+	if clientID := os.Getenv("REMOTESHELL_OAUTH2_CLIENT_ID"); clientID != "" {
+		c.OAuth2ClientID = clientID
+	}
+	if clientSecret := os.Getenv("REMOTESHELL_OAUTH2_CLIENT_SECRET"); clientSecret != "" {
+		c.OAuth2ClientSecret = clientSecret
+	}
+	if baseURL := os.Getenv("REMOTESHELL_OAUTH2_BASE_URL"); baseURL != "" {
+		c.OAuth2BaseURL = baseURL
+	}
+	if redirectURL := os.Getenv("REMOTESHELL_OAUTH2_REDIRECT_URL"); redirectURL != "" {
+		c.OAuth2RedirectURL = redirectURL
+	}
+	if scopes := os.Getenv("REMOTESHELL_OAUTH2_SCOPES"); scopes != "" {
+		c.OAuth2Scopes = scopes
 	}
 }
 

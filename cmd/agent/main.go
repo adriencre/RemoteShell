@@ -11,13 +11,13 @@ import (
 )
 
 func main() {
-	// Configuration des flags
+	// Configuration des flags (sans valeurs par défaut pour ne pas écraser les env vars)
 	var (
-		serverHost = flag.String("server", "localhost:8080", "Adresse du serveur")
-		authToken  = flag.String("token", "", "Token d'authentification")
-		agentName  = flag.String("name", "", "Nom de l'agent")
-		agentID    = flag.String("id", "", "ID de l'agent")
-		tls        = flag.Bool("tls", false, "Utiliser TLS")
+		serverHost = flag.String("server", "", "Adresse du serveur (défaut depuis REMOTESHELL_SERVER_HOST:PORT)")
+		authToken  = flag.String("token", "", "Token d'authentification (défaut depuis REMOTESHELL_AUTH_TOKEN)")
+		agentName  = flag.String("name", "", "Nom de l'agent (défaut depuis REMOTESHELL_AGENT_NAME)")
+		agentID    = flag.String("id", "", "ID de l'agent (défaut depuis REMOTESHELL_AGENT_ID)")
+		tls        = flag.Bool("tls", false, "Utiliser TLS (défaut depuis REMOTESHELL_SERVER_TLS)")
 		verbose    = flag.Bool("verbose", false, "Mode verbeux")
 	)
 	flag.Parse()
@@ -26,10 +26,10 @@ func main() {
 	config := common.DefaultConfig()
 	config.LoadFromEnv()
 
-	// Appliquer les flags
+	// Appliquer les flags seulement s'ils sont fournis (pour ne pas écraser les env vars)
 	if *serverHost != "" {
-		// Parser l'adresse serveur
-		host, port := parseServerAddress(*serverHost)
+		// Parser l'adresse serveur en utilisant les valeurs de config comme fallback
+		host, port := parseServerAddress(*serverHost, config.ServerHost, config.ServerPort)
 		config.ServerHost = host
 		config.ServerPort = port
 	}
@@ -42,8 +42,15 @@ func main() {
 	if *agentID != "" {
 		config.AgentID = *agentID
 	}
-	if *tls {
-		config.ServerTLS = true
+	// Pour les booléens, on vérifie si le flag a été fourni explicitement
+	flagTLSProvided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "tls" {
+			flagTLSProvided = true
+		}
+	})
+	if flagTLSProvided {
+		config.ServerTLS = *tls
 	}
 	if *verbose {
 		config.LogLevel = "debug"
@@ -54,8 +61,8 @@ func main() {
 		log.Fatal("Token d'authentification requis (--token ou REMOTESHELL_AUTH_TOKEN)")
 	}
 
-	// Créer le gestionnaire de tokens
-	tokenManager := auth.NewTokenManager("", "remoteshell-agent")
+	// Créer le gestionnaire de tokens avec la clé depuis la config
+	tokenManager := auth.NewTokenManager(config.AuthToken, "remoteshell-agent")
 
 	// Créer et démarrer le client agent
 	client := agent.NewClient(config, tokenManager)
@@ -70,10 +77,10 @@ func main() {
 }
 
 // parseServerAddress parse une adresse serveur au format host:port
-func parseServerAddress(addr string) (string, int) {
-	// Format par défaut
-	host := "localhost"
-	port := 8080
+// Utilise defaultHost et defaultPort comme valeurs de secours si le parsing échoue
+func parseServerAddress(addr string, defaultHost string, defaultPort int) (string, int) {
+	host := defaultHost
+	port := defaultPort
 
 	// Chercher le dernier ':' pour séparer host et port
 	for i := len(addr) - 1; i >= 0; i-- {
@@ -82,15 +89,16 @@ func parseServerAddress(addr string) (string, int) {
 			if i+1 < len(addr) {
 				// Parser le port
 				if p, err := fmt.Sscanf(addr[i+1:], "%d", &port); err != nil || p != 1 {
-					log.Printf("Port invalide '%s', utilisation du port par défaut %d", addr[i+1:], port)
+					log.Printf("Port invalide '%s', utilisation du port par défaut %d", addr[i+1:], defaultPort)
+					port = defaultPort
 				}
 			}
 			break
 		}
 	}
 
-	// Si pas de ':', c'est juste un host
-	if host == addr {
+	// Si pas de ':', c'est juste un host (utiliser le host fourni)
+	if host == defaultHost && addr != defaultHost {
 		host = addr
 	}
 

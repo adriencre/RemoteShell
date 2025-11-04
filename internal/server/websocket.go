@@ -18,14 +18,16 @@ import (
 type WebSocketServer struct {
 	hub          *Hub
 	tokenManager *auth.TokenManager
+	authToken    string // Token simple pour les agents (REMOTESHELL_AUTH_TOKEN)
 	upgrader     websocket.Upgrader
 }
 
 // NewWebSocketServer crée un nouveau serveur WebSocket
-func NewWebSocketServer(hub *Hub, tokenManager *auth.TokenManager) *WebSocketServer {
+func NewWebSocketServer(hub *Hub, tokenManager *auth.TokenManager, authToken string) *WebSocketServer {
 	return &WebSocketServer{
 		hub:          hub,
 		tokenManager: tokenManager,
+		authToken:    authToken,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// En production, vérifier l'origine
@@ -98,10 +100,12 @@ func (ws *WebSocketServer) handleConnection(conn WebSocketConn) {
 		if agent == nil && webClient == nil {
 			if msg.Type == common.MessageTypeAuth {
 				// Vérifier le type de token pour distinguer agent et client web
+				// Si le token n'est pas le token simple d'authentification, c'est probablement un client web
 				if tokenData, ok := msg.Data.(map[string]interface{}); ok {
 					if token, exists := tokenData["token"]; exists {
 						if tokenStr, ok := token.(string); ok {
-							if tokenStr != "test-token" {
+							// Si ce n'est pas le token simple d'auth, c'est un client web avec un token JWT
+							if tokenStr != ws.authToken && tokenStr != "" {
 								// C'est un client web avec un token JWT
 								webClient = &WebClient{
 									ID:   fmt.Sprintf("webclient_%d", time.Now().UnixNano()),
@@ -193,8 +197,9 @@ func (ws *WebSocketServer) handleMessage(conn WebSocketConn, msg *common.Message
 // handleAuth traite l'authentification
 func (ws *WebSocketServer) handleAuth(conn WebSocketConn, msg *common.Message, agent **Agent) error {
 	var token string
+	var agentID, agentName string
 
-	// Gérer les différents types de données
+	// Extraire le token et les infos agent depuis les données
 	switch data := msg.Data.(type) {
 	case *common.AuthData:
 		token = data.Token
@@ -208,25 +213,44 @@ func (ws *WebSocketServer) handleAuth(conn WebSocketConn, msg *common.Message, a
 		} else {
 			return ws.sendAuthError(conn, "token manquant")
 		}
+		// Extraire agentID et agentName depuis map si disponibles
+		if agentIDVal, exists := data["agent_id"]; exists {
+			if agentIDStr, ok := agentIDVal.(string); ok {
+				agentID = agentIDStr
+			}
+		}
+		if agentNameVal, exists := data["agent_name"]; exists {
+			if agentNameStr, ok := agentNameVal.(string); ok {
+				agentName = agentNameStr
+			}
+		}
 	default:
 		return ws.sendAuthError(conn, "format de données invalide")
 	}
 
-	// Pour les agents, on accepte un token simple ou un JWT
-	var agentID, agentName string
+	// Utiliser agentID depuis le message si disponible
+	if agentID == "" && msg.AgentID != "" {
+		agentID = msg.AgentID
+	}
 
+	// Pour les agents, on accepte un token simple ou un JWT
 	// Essayer d'abord de valider comme JWT
 	claims, err := ws.tokenManager.ValidateToken(token)
 	if err != nil {
-		// Si ce n'est pas un JWT valide, accepter un token simple
-		if token == "test-token" {
-			agentID = "serveur-impression-01"
-			agentName = "Serveur d'impression principal"
+		// Si ce n'est pas un JWT valide, vérifier si c'est le token simple d'authentification
+		if token == ws.authToken && ws.authToken != "" {
+			// Token simple accepté
+			if agentID == "" {
+				return ws.sendAuthError(conn, "agentID manquant")
+			}
+			if agentName == "" {
+				agentName = agentID // Utiliser l'ID comme nom par défaut
+			}
 		} else {
 			return ws.sendAuthError(conn, "token invalide")
 		}
 	} else {
-		// JWT valide
+		// JWT valide - utiliser les claims du token
 		agentID = claims.AgentID
 		agentName = claims.AgentName
 	}

@@ -23,3 +23,5 @@ fi
 
 ./build/remoteshell-agent --server "$SERVER" --token "$TOKEN" --name "$NAME"
 
+
+
