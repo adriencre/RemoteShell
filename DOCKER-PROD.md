@@ -1,6 +1,31 @@
 # Guide de déploiement Docker en production
 
-## Configuration rapide
+## ⚠️ Problème "Bad Gateway 502" ?
+
+**Si vous avez un 502 Bad Gateway, c'est probablement parce que le serveur Docker n'est pas démarré !**
+
+Vérifiez avec :
+```bash
+docker ps | grep remoteshell
+```
+
+Si aucun conteneur n'apparaît, suivez les étapes ci-dessous pour démarrer le serveur.
+
+## 🚀 Démarrage rapide (méthode recommandée)
+
+### Utiliser le script de démarrage automatique :
+
+```bash
+./start-prod.sh
+```
+
+Le script va :
+1. Créer le fichier `.env` si nécessaire
+2. Construire l'image Docker
+3. Démarrer le serveur
+4. Vérifier que tout fonctionne
+
+## Configuration manuelle
 
 ### 1. Créer un fichier `.env` avec vos variables
 
@@ -64,7 +89,31 @@ location /ws {
 }
 ```
 
-## Diagnostic du problème "Bad Gateway"
+## 🔍 Diagnostic du problème "Bad Gateway 502"
+
+### Étape 1 : Vérifier si le serveur Docker tourne
+
+```bash
+# Vérifier les conteneurs en cours d'exécution
+docker ps | grep remoteshell
+
+# Si aucun conteneur n'apparaît, le serveur n'est pas démarré !
+# Démarrez-le avec :
+docker-compose -f docker-compose.prod.yml up -d
+# ou
+./start-prod.sh
+```
+
+### Étape 2 : Vérifier les logs du serveur
+
+```bash
+docker-compose -f docker-compose.prod.yml logs remoteshell-server
+```
+
+**Cherchez les erreurs de démarrage :**
+- Variables d'environnement manquantes
+- Port déjà utilisé
+- Erreurs de permissions
 
 ### Vérifications à faire :
 
@@ -91,20 +140,46 @@ location /ws {
 
 ## Problèmes courants
 
-### Bad Gateway 502
+### Bad Gateway 502 - Solution complète
 
-**Causes possibles :**
-- Le serveur n'a pas démarré (vérifiez les logs)
-- Le port est incorrect dans le reverse proxy
-- Le reverse proxy ne peut pas joindre le conteneur (problème de réseau Docker)
+**Causes possibles (dans l'ordre de probabilité) :**
 
-**Solution :**
+1. **Le serveur Docker n'est pas démarré** ⚠️ (Cause la plus fréquente)
+   ```bash
+   # Vérifier
+   docker ps | grep remoteshell
+   
+   # Si vide, démarrer :
+   docker-compose -f docker-compose.prod.yml up -d
+   # ou
+   ./start-prod.sh
+   ```
+
+2. **Le serveur n'a pas démarré correctement**
+   ```bash
+   # Vérifier les logs
+   docker-compose -f docker-compose.prod.yml logs remoteshell-server
+   ```
+
+3. **Le port est incorrect dans le reverse proxy**
+   - Le reverse proxy doit proxifier vers `http://127.0.0.1:8081` (pas `rms.lfgroup.fr:8081`)
+   - Vérifiez votre configuration Nginx
+
+4. **Le reverse proxy ne peut pas joindre le conteneur**
+   - Si Nginx est sur l'hôte : utilisez `127.0.0.1:8081` (pas `localhost`)
+   - Si Nginx est dans Docker : utilisez `remoteshell-server:8081` sur le même réseau
+
+**Solution étape par étape :**
 ```bash
-# Vérifier que le serveur est accessible depuis l'hôte
-curl http://localhost:8081/health
+# 1. Vérifier que le conteneur tourne
+docker ps | grep remoteshell-server
 
-# Si ça fonctionne, le problème vient du reverse proxy
-# Vérifiez la configuration nginx
+# 2. Vérifier que le serveur répond depuis l'hôte
+curl http://localhost:8081/health
+# Devrait retourner: {"status":"ok"}
+
+# 3. Si le serveur répond, le problème vient du reverse proxy
+# Vérifiez votre configuration Nginx - elle doit proxifier vers 127.0.0.1:8081
 ```
 
 ### Le serveur ne démarre pas

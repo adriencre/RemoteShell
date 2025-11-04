@@ -1,8 +1,8 @@
 module remoteshell
 
-go 1.24.0
+go 1.23
 
-toolchain go1.24.9
+toolchain auto
 
 require (
 	github.com/gin-gonic/gin v1.9.1
