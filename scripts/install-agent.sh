@@ -62,6 +62,17 @@ while [ -z "$SERVER_URL" ]; do
     fi
 done
 
+# Demander si on veut utiliser TLS (pour tester)
+echo ""
+read -p "Utiliser TLS/WSS pour la connexion WebSocket ? [O/n]: " USE_TLS_INPUT
+USE_TLS_OPTION=""
+if [[ ! "$USE_TLS_INPUT" =~ ^[Nn]$ ]]; then
+    USE_TLS_OPTION="--tls"
+    echo "✅ TLS/WSS activé"
+else
+    echo "⚠️  TLS/WSS désactivé (connexion non sécurisée)"
+fi
+
 echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la connexion de l'agent au serveur."
 echo ""
 
@@ -236,20 +247,31 @@ AUTH_TOKEN="${AUTH_TOKEN}"
 EOF
 chmod 600 /etc/remoteshell/agent.conf
 
-# Déterminer si TLS doit être utilisé
-# Pour rms.lfgroup.fr, toujours utiliser WSS (WebSocket Secure) via le reverse proxy
-USE_TLS=""
-if [[ "$SERVER_HOST_PORT" == *"rms.lfgroup.fr"* ]]; then
-    # Pour rms.lfgroup.fr, utiliser WSS (WebSocket Secure) via le reverse proxy sur le port 443
-    USE_TLS="--tls"
-    # Si un port est spécifié autre que 443, utiliser le port 443 pour WSS
-    if [[ "$SERVER_HOST_PORT" == *":8081" ]]; then
-        SERVER_HOST_PORT="rms.lfgroup.fr:443"
-    elif [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
-        SERVER_HOST_PORT="rms.lfgroup.fr:443"
+# Normaliser l'URL et déterminer le port final
+# Si l'utilisateur a choisi de ne pas utiliser TLS, ne pas forcer le port 443
+if [[ -z "$USE_TLS_OPTION" ]]; then
+    # Pas de TLS - utiliser le port tel quel ou le port 8081 par défaut (port du serveur)
+    if [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
+        SERVER_HOST_PORT="rms.lfgroup.fr:8081"
+        echo "ℹ️  Connexion WS (non sécurisée) sur le port 8081"
     fi
-    echo "ℹ️  Utilisation de WSS (WebSocket Secure) sur le port 443 via le reverse proxy"
+else
+    # TLS activé - pour rms.lfgroup.fr, utiliser le port 443
+    if [[ "$SERVER_HOST_PORT" == *"rms.lfgroup.fr"* ]]; then
+        # Toujours utiliser le port 443 pour WSS via le reverse proxy
+        if [[ "$SERVER_HOST_PORT" == *":8081" ]]; then
+            SERVER_HOST_PORT="rms.lfgroup.fr:443"
+            echo "ℹ️  Le port 8081 est pour la connexion interne. Utilisation du port 443 (WSS) via le reverse proxy."
+        elif [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
+            SERVER_HOST_PORT="rms.lfgroup.fr:443"
+        fi
+        echo "ℹ️  Configuration: WSS (WebSocket Secure) sur $SERVER_HOST_PORT"
+        echo "⚠️  IMPORTANT: Assurez-vous que votre reverse proxy (nginx) est configuré pour les WebSockets !"
+        echo "   Voir TROUBLESHOOTING_WEBSOCKET.md pour la configuration nginx requise."
+    fi
 fi
+
+USE_TLS="$USE_TLS_OPTION"
 
 # Créer le fichier de service systemd
 echo "📄 Création du service systemd..."
