@@ -152,6 +152,9 @@ func (e *Executor) readOutput(marker string, timeout time.Duration) (string, err
 
 // Execute exécute une commande et retourne le résultat
 func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*common.CommandOutput, error) {
+	// Log au début pour confirmer que Execute est appelé
+	log.Printf("[Executor] === Execute appelé === Commande: %q, WorkingDir reçu: %q, WorkingDir interne: %q",
+		cmdData.Command, cmdData.WorkingDir, e.workingDir)
 	start := time.Now()
 
 	// Initialiser le shell si nécessaire
@@ -218,7 +221,7 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	} else {
 		log.Printf("[Executor] Commande non-cd détectée: %s, workingDir actuel: %s", fullCommand, e.workingDir)
 	}
-	
+
 	if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
 		// Si un workingDir est explicitement spécifié (pas "."), l'utiliser
 		// Ignorer "." car cela signifie "utiliser le répertoire courant du shell"
@@ -248,6 +251,7 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	// NOTE: Si c'est un cd, la commande sera "cd /home; echo 'marker'"
 	// Sinon, si workingDir est défini, ce sera "cd /home && ls; echo 'marker'"
 	commandWithMarker := fmt.Sprintf("%s; echo '%s'\n", commandToExecute, marker)
+	log.Printf("[Executor] === Commande envoyée au shell === %q", commandWithMarker)
 	if _, err := e.shellIn.Write([]byte(commandWithMarker)); err != nil {
 		return &common.CommandOutput{
 			Stdout:   "",
