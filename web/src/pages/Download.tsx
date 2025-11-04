@@ -3,8 +3,7 @@ import { Download as DownloadIcon } from 'lucide-react'
 
 const Download: React.FC = () => {
   const handleDownload = () => {
-    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin
-    window.location.href = `${apiUrl}/download/agent`
+    window.location.href = `${window.location.origin}/download/agent`
   }
 
   return (
