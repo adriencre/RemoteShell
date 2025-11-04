@@ -1,0 +1,20 @@
+# Configuration Nixpacks pour forcer l'utilisation du Dockerfile
+# Ce fichier désactive la détection automatique de Nixpacks
+# et force Dockploy à utiliser le Dockerfile
+
+[phases.setup]
+nixPkgs = []
+
+[phases.install]
+cmds = []
+
+[phases.build]
+cmds = []
+
+[phases.start]
+cmd = ""
+
+# Forcer l'utilisation du Dockerfile
+[providers]
+dockerfile = "Dockerfile"
+

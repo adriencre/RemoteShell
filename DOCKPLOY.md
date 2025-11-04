@@ -93,8 +93,19 @@ services:
       - "traefik.http.services.remoteshell.loadbalancer.server.port=8081"
 ```
 
+## ⚠️ Important : Forcer l'utilisation du Dockerfile
+
+Dockploy utilise Nixpacks par défaut qui peut détecter automatiquement le projet Go. Pour forcer l'utilisation du Dockerfile :
+
+**Le fichier `nixpacks.toml` a été créé** pour désactiver la détection automatique et forcer l'utilisation du Dockerfile.
+
+Si Dockploy utilise encore Nixpacks, dans l'interface Dockploy :
+- Cherchez l'option "Build type" ou "Build method"
+- Sélectionnez "Dockerfile" au lieu de "Auto-detect" ou "Nixpacks"
+
 ## ✅ Checklist de déploiement
 
+- [ ] Le fichier `nixpacks.toml` est présent (forçage Dockerfile)
 - [ ] Toutes les variables d'environnement sont configurées dans Dockploy
 - [ ] Le port `8081` est correctement mappé
 - [ ] Le reverse proxy est configuré pour proxifier vers le bon port

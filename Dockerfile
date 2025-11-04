@@ -1,5 +1,6 @@
 # Dockerfile pour RemoteShell
-FROM golang:1.23-alpine AS builder
+# Utiliser une version stable de Go 1.23 (pas rc)
+FROM golang:1.23.5-alpine AS builder
 
 # Installer les dépendances système
 RUN apk add --no-cache git ca-certificates tzdata
