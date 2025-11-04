@@ -527,7 +527,7 @@ func (ws *WebSocketServer) handleHeartbeat(conn WebSocketConn, msg *common.Messa
 	// Mettre à jour le timestamp
 	(*agent).UpdateLastSeen()
 
-	// Répondre au heartbeat
+	// Répondre au heartbeat (sans log pour éviter la pollution)
 	response := common.NewMessage(common.MessageTypeHeartbeat, nil)
 	return conn.SendMessage(response)
 }

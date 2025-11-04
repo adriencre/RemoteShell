@@ -37,6 +37,8 @@ type Client struct {
 	mu             sync.RWMutex
 	agentID        string
 	agentName      string
+	lastLogTime    time.Time // Pour limiter les logs de heartbeat
+	logMutex       sync.Mutex
 }
 
 // NewClient crée un nouveau client agent
@@ -282,9 +284,21 @@ func (c *Client) handleMessages() {
 
 // processMessage traite un message spécifique
 func (c *Client) processMessage(msg *common.Message) error {
-	// Log tous les messages sauf heartbeat
+	// Log tous les messages sauf heartbeat (pour éviter la pollution)
+	// Les heartbeats sont loggés séparément avec limitation de fréquence
 	if msg.Type != common.MessageTypeHeartbeat {
 		log.Printf("[AGENT] processMessage - Message reçu: Type=%s, ID=%s, AgentID=%s", msg.Type, msg.ID, msg.AgentID)
+	} else {
+		// Pour les heartbeats, log seulement si plus d'1 seconde s'est écoulée depuis le dernier log
+		c.logMutex.Lock()
+		now := time.Now()
+		shouldLog := now.Sub(c.lastLogTime) >= time.Second
+		if shouldLog {
+			c.lastLogTime = now
+			log.Printf("DEBUG: Traitement du message de type: heartbeat, ID: %s", msg.ID)
+			log.Printf("DEBUG: Données du message: %v", msg.Data)
+		}
+		c.logMutex.Unlock()
 	}
 
 	switch msg.Type {
@@ -309,7 +323,7 @@ func (c *Client) processMessage(msg *common.Message) error {
 	case common.MessageTypeLogContent:
 		return c.handleLogContent(msg)
 	case common.MessageTypeHeartbeat:
-		// Répondre au heartbeat (sans log pour éviter la pollution)
+		// Répondre au heartbeat (les logs sont déjà gérés dans processMessage avec limitation)
 		response := common.NewMessage(common.MessageTypeHeartbeat, nil)
 		response.AgentID = c.agentID
 		return c.sendMessage(response)
@@ -322,23 +336,27 @@ func (c *Client) processMessage(msg *common.Message) error {
 
 // handleCommand traite une commande
 func (c *Client) handleCommand(msg *common.Message) error {
+	log.Printf("[Client] === handleCommand appelé === Message ID: %s", msg.ID)
 	var cmdData *common.CommandData
 
 	// Gérer les différents types de données
 	switch data := msg.Data.(type) {
 	case *common.CommandData:
 		cmdData = data
+		log.Printf("[Client] CommandData reçu directement: command=%q, workingDir=%q", cmdData.Command, cmdData.WorkingDir)
 	case map[string]interface{}:
 		// Convertir map en CommandData
 		cmdData = &common.CommandData{}
 		if cmd, exists := data["command"]; exists {
 			if cmdStr, ok := cmd.(string); ok {
 				cmdData.Command = cmdStr
+				log.Printf("[Client] Commande extraite du map: %q", cmdStr)
 			}
 		}
 		if workingDir, exists := data["working_dir"]; exists {
 			if dirStr, ok := workingDir.(string); ok {
 				cmdData.WorkingDir = dirStr
+				log.Printf("[Client] WorkingDir extrait du map: %q", dirStr)
 			}
 		}
 		if timeout, exists := data["timeout"]; exists {
@@ -346,16 +364,23 @@ func (c *Client) handleCommand(msg *common.Message) error {
 				cmdData.Timeout = int(timeoutNum)
 			}
 		}
+		log.Printf("[Client] CommandData construit depuis map: command=%q, workingDir=%q, timeout=%d", 
+			cmdData.Command, cmdData.WorkingDir, cmdData.Timeout)
 	default:
+		log.Printf("[Client] ERREUR: Format de données invalide: %T", msg.Data)
 		return fmt.Errorf("format de données de commande invalide: %T", msg.Data)
 	}
 
 	if cmdData.Command == "" {
+		log.Printf("[Client] ERREUR: Commande manquante")
 		return fmt.Errorf("commande manquante")
 	}
 
+	log.Printf("[Client] Commande validée: %q, appel de ExecuteWithTimeout...", cmdData.Command)
+
 	// Vérifier la sécurité de la commande
 	if !c.executor.IsCommandSafe(cmdData.Command) {
+		log.Printf("[Client] ERREUR: Commande non sécurisée: %q", cmdData.Command)
 		errorMsg := common.NewMessageWithID(common.MessageTypeError, msg.ID, &common.ErrorData{
 			Code:    "UNSAFE_COMMAND",
 			Message: "Commande non autorisée pour des raisons de sécurité",
@@ -364,8 +389,10 @@ func (c *Client) handleCommand(msg *common.Message) error {
 		return c.sendMessage(errorMsg)
 	}
 
+	log.Printf("[Client] Commande sécurisée, exécution...")
 	// Exécuter la commande
 	output, err := c.executor.ExecuteWithTimeout(cmdData)
+	log.Printf("[Client] ExecuteWithTimeout terminé, erreur: %v", err)
 	if err != nil {
 		errorMsg := common.NewMessageWithID(common.MessageTypeError, msg.ID, &common.ErrorData{
 			Code:    "EXECUTION_ERROR",
