@@ -55,7 +55,8 @@ COPY --from=builder /app/remoteshell-server .
 COPY --from=builder /app/remoteshell-agent .
 
 # Copier l'interface web depuis le web-builder
-COPY --from=web-builder /app/web/dist ./web
+RUN mkdir -p ./build/web
+COPY --from=web-builder /app/web/dist ./build/web
 
 # Copier les fichiers de configuration
 COPY --from=builder /app/README.md .
