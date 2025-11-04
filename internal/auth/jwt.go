@@ -18,8 +18,10 @@ var (
 
 // Claims contient les claims JWT
 type Claims struct {
-	AgentID   string `json:"agent_id"`
-	AgentName string `json:"agent_name"`
+	AgentID   string `json:"agent_id,omitempty"`   // Pour les agents uniquement
+	AgentName string `json:"agent_name,omitempty"` // Pour les agents uniquement
+	UserID    string `json:"user_id,omitempty"`    // Pour les utilisateurs web uniquement
+	UserName  string `json:"user_name,omitempty"`  // Pour les utilisateurs web uniquement
 	Role      string `json:"role"`
 	jwt.RegisteredClaims
 }
@@ -41,7 +43,7 @@ func NewTokenManager(secretKey string, issuer string) *TokenManager {
 	}
 }
 
-// GenerateToken génère un nouveau token JWT
+// GenerateToken génère un nouveau token JWT (pour agents ou utilisateurs)
 func (tm *TokenManager) GenerateToken(agentID, agentName, role string, duration time.Duration) (string, error) {
 	now := time.Now()
 	claims := &Claims{
@@ -51,6 +53,26 @@ func (tm *TokenManager) GenerateToken(agentID, agentName, role string, duration 
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    tm.issuer,
 			Subject:   agentID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
+			NotBefore: jwt.NewNumericDate(now),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(tm.secretKey)
+}
+
+// GenerateUserToken génère un token JWT pour un utilisateur web
+func (tm *TokenManager) GenerateUserToken(userID, userName, role string, duration time.Duration) (string, error) {
+	now := time.Now()
+	claims := &Claims{
+		UserID:   userID,
+		UserName: userName,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    tm.issuer,
+			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 			NotBefore: jwt.NewNumericDate(now),

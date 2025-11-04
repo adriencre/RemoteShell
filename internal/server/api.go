@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -23,16 +24,18 @@ type APIServer struct {
 	wsServer     *WebSocketServer
 	config       *common.Config
 	oauth2Config *auth.OAuth2Config
+	db           *Database
 }
 
 // NewAPIServer crée un nouveau serveur API
-func NewAPIServer(hub *Hub, tokenManager *auth.TokenManager, authToken string, config *common.Config) *APIServer {
+func NewAPIServer(hub *Hub, tokenManager *auth.TokenManager, authToken string, config *common.Config, db *Database) *APIServer {
 	api := &APIServer{
 		hub:          hub,
 		tokenManager: tokenManager,
 		router:       gin.Default(),
 		wsServer:     NewWebSocketServer(hub, tokenManager, authToken),
 		config:       config,
+		db:           db,
 	}
 
 	// Initialiser OAuth2 si configuré
@@ -184,23 +187,56 @@ func (api *APIServer) login(c *gin.Context) {
 	}
 }
 
-// getAgents retourne la liste des agents
+// getAgents retourne la liste des agents (filtrée selon l'utilisateur)
 func (api *APIServer) getAgents(c *gin.Context) {
-	agents := api.hub.GetAgents()
+	// Récupérer l'utilisateur depuis les claims
+	claims, exists := auth.GetClaimsFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "utilisateur non authentifié"})
+		return
+	}
 
+	// Si c'est un utilisateur web (UserID présent), filtrer les agents
+	userID := claims.UserID
+	if userID == "" {
+		// Fallback pour compatibilité avec anciens tokens
+		userID = claims.AgentID
+	}
+
+	allAgents := api.hub.GetAgents()
 	var agentList []gin.H
-	for _, agent := range agents {
-		metadata := api.hub.GetAgentMetadata(agent.ID)
-		agentList = append(agentList, gin.H{
-			"id":          agent.ID,
-			"name":        agent.Name,
-			"last_seen":   agent.LastSeen,
-			"active":      agent.IsActive(),
-			"printers":    len(agent.GetPrinters()),
-			"system_info": agent.GetSystemInfo(),
-			"franchise":   metadata.Franchise,
-			"category":    metadata.Category,
-		})
+
+	// Si l'utilisateur est admin, voir tous les agents
+	if claims.Role == "admin" {
+		for _, agent := range allAgents {
+			metadata := api.hub.GetAgentMetadata(agent.ID)
+			agentList = append(agentList, gin.H{
+				"id":          agent.ID,
+				"name":        agent.Name,
+				"last_seen":   agent.LastSeen,
+				"active":      agent.IsActive(),
+				"printers":    len(agent.GetPrinters()),
+				"system_info": agent.GetSystemInfo(),
+				"franchise":   metadata.Franchise,
+				"category":    metadata.Category,
+			})
+		}
+	} else {
+		// Sinon, filtrer selon l'utilisateur (agents qui n'ont pas de UserID ou qui appartiennent à cet utilisateur)
+		// Pour l'instant, on montre tous les agents (peut être modifié selon les besoins)
+		for _, agent := range allAgents {
+			metadata := api.hub.GetAgentMetadata(agent.ID)
+			agentList = append(agentList, gin.H{
+				"id":          agent.ID,
+				"name":        agent.Name,
+				"last_seen":   agent.LastSeen,
+				"active":      agent.IsActive(),
+				"printers":    len(agent.GetPrinters()),
+				"system_info": agent.GetSystemInfo(),
+				"franchise":   metadata.Franchise,
+				"category":    metadata.Category,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1010,7 +1046,6 @@ func (api *APIServer) oauth2Callback(c *gin.Context) {
 		return
 	}
 
-	// Générer un token JWT pour notre application
 	// Utiliser le sub (subject) comme ID utilisateur
 	userID := userInfo.Sub
 	if userID == "" {
@@ -1040,8 +1075,48 @@ func (api *APIServer) oauth2Callback(c *gin.Context) {
 		}
 	}
 
-	// Générer le token JWT
-	jwtToken, err := api.tokenManager.GenerateToken(userID, userName, role, 24*time.Hour)
+	// Sérialiser les groupes en JSON
+	groupsJSON, _ := json.Marshal(userInfo.Groups)
+
+	// Créer ou récupérer l'utilisateur en base de données
+	user := &User{
+		ID:       userID,
+		Email:    userInfo.Email,
+		Name:     userName,
+		Username: userInfo.PreferredUsername,
+		Role:     role,
+		Groups:   string(groupsJSON),
+	}
+
+	// Vérifier si l'utilisateur existe déjà
+	existingUser, err := api.db.GetUser(userID)
+	if err != nil {
+		// L'utilisateur n'existe pas, créer un nouveau
+		user.CreatedAt = time.Now()
+		user.UpdatedAt = time.Now()
+		if err := api.db.SaveUser(user); err != nil {
+			log.Printf("Erreur de sauvegarde de l'utilisateur: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de sauvegarde de l'utilisateur"})
+			return
+		}
+		log.Printf("Nouvel utilisateur créé: %s (%s)", userName, userID)
+	} else {
+		// Mettre à jour l'utilisateur existant
+		existingUser.Email = userInfo.Email
+		existingUser.Name = userName
+		existingUser.Username = userInfo.PreferredUsername
+		existingUser.Role = role
+		existingUser.Groups = string(groupsJSON)
+		existingUser.UpdatedAt = time.Now()
+		if err := api.db.SaveUser(existingUser); err != nil {
+			log.Printf("Erreur de mise à jour de l'utilisateur: %v", err)
+		}
+		user = existingUser
+		log.Printf("Utilisateur mis à jour: %s (%s)", userName, userID)
+	}
+
+	// Générer le token JWT pour l'utilisateur web
+	jwtToken, err := api.tokenManager.GenerateUserToken(userID, userName, role, 24*time.Hour)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de génération du token"})
 		return

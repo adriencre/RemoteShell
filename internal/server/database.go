@@ -13,6 +13,18 @@ type Database struct {
 	db *gorm.DB
 }
 
+// User représente un utilisateur SSO
+type User struct {
+	ID        string    `gorm:"primaryKey" json:"id"` // ID depuis Authentik (sub)
+	Email     string    `gorm:"uniqueIndex" json:"email"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Role      string    `json:"role"` // "admin" ou "user"
+	Groups    string    `json:"groups"` // JSON array des groupes
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // AgentRecord représente un enregistrement d'agent en base
 type AgentRecord struct {
 	ID        string    `gorm:"primaryKey" json:"id"`
@@ -23,6 +35,7 @@ type AgentRecord struct {
 	UserAgent string    `json:"user_agent"`
 	Franchise string    `json:"franchise"` // Ex: "Lille", "Paris"
 	Category  string    `json:"category"`  // Ex: "Corporate", "Cantine"
+	UserID    string    `json:"user_id"`    // ID de l'utilisateur propriétaire (optionnel)
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -93,6 +106,7 @@ func NewDatabase(dbPath string) (*Database, error) {
 
 	// Auto-migration des modèles
 	if err := db.AutoMigrate(
+		&User{},
 		&AgentRecord{},
 		&CommandLog{},
 		&FileLog{},
@@ -289,4 +303,43 @@ func (d *Database) CleanupOldLogs(days int) error {
 	}
 
 	return nil
+}
+
+// SaveUser sauvegarde ou met à jour un utilisateur
+func (d *Database) SaveUser(user *User) error {
+	return d.db.Save(user).Error
+}
+
+// GetUser récupère un utilisateur par son ID
+func (d *Database) GetUser(userID string) (*User, error) {
+	var user User
+	err := d.db.Where("id = ?", userID).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUserByEmail récupère un utilisateur par son email
+func (d *Database) GetUserByEmail(email string) (*User, error) {
+	var user User
+	err := d.db.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUsers récupère tous les utilisateurs
+func (d *Database) GetUsers() ([]*User, error) {
+	var users []*User
+	err := d.db.Find(&users).Error
+	return users, err
+}
+
+// GetAgentsByUser récupère les agents d'un utilisateur
+func (d *Database) GetAgentsByUser(userID string) ([]*AgentRecord, error) {
+	var agents []*AgentRecord
+	err := d.db.Where("user_id = ?", userID).Find(&agents).Error
+	return agents, err
 }

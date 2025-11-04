@@ -239,7 +239,7 @@ func (ws *WebSocketServer) handleAuth(conn WebSocketConn, msg *common.Message, a
 	if err != nil {
 		// Si ce n'est pas un JWT valide, vérifier si c'est le token simple d'authentification
 		if token == ws.authToken && ws.authToken != "" {
-			// Token simple accepté
+			// Token simple accepté - c'est un vrai agent
 			if agentID == "" {
 				return ws.sendAuthError(conn, "agentID manquant")
 			}
@@ -250,12 +250,21 @@ func (ws *WebSocketServer) handleAuth(conn WebSocketConn, msg *common.Message, a
 			return ws.sendAuthError(conn, "token invalide")
 		}
 	} else {
-		// JWT valide - utiliser les claims du token
+		// JWT valide - vérifier si c'est un utilisateur web ou un agent
+		if claims.UserID != "" {
+			// C'est un utilisateur web, ne pas créer d'agent
+			// L'utilisateur web est déjà géré comme WebClient dans handleConnection
+			return ws.sendAuthError(conn, "token utilisateur web - connexion agent non autorisée")
+		}
+		// C'est un agent avec JWT
+		if claims.AgentID == "" {
+			return ws.sendAuthError(conn, "token agent invalide - agentID manquant")
+		}
 		agentID = claims.AgentID
 		agentName = claims.AgentName
 	}
 
-	// Créer l'agent
+	// Créer l'agent uniquement si ce n'est pas un utilisateur web
 	*agent = &Agent{
 		ID:       agentID,
 		Name:     agentName,

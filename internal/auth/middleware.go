@@ -37,8 +37,16 @@ func AuthMiddleware(tokenManager *TokenManager) gin.HandlerFunc {
 		}
 
 		// Ajouter les claims au contexte
-		c.Set("agent_id", claims.AgentID)
-		c.Set("agent_name", claims.AgentName)
+		// Pour les utilisateurs web, utiliser UserID/UserName
+		// Pour les agents, utiliser AgentID/AgentName
+		if claims.UserID != "" {
+			c.Set("user_id", claims.UserID)
+			c.Set("user_name", claims.UserName)
+		}
+		if claims.AgentID != "" {
+			c.Set("agent_id", claims.AgentID)
+			c.Set("agent_name", claims.AgentName)
+		}
 		c.Set("role", claims.Role)
 		c.Set("claims", claims)
 

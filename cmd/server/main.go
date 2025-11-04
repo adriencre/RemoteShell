@@ -16,14 +16,14 @@ import (
 func main() {
 	// Configuration des flags (sans valeurs par défaut pour ne pas écraser les env vars)
 	var (
-		host       = flag.String("host", "", "Adresse d'écoute (défaut depuis REMOTESHELL_SERVER_HOST)")
-		port       = flag.Int("port", 0, "Port d'écoute (défaut depuis REMOTESHELL_SERVER_PORT)")
-		tls        = flag.Bool("tls", false, "Utiliser TLS (défaut depuis REMOTESHELL_SERVER_TLS)")
-		certFile   = flag.String("cert", "", "Fichier de certificat (défaut depuis REMOTESHELL_CERT_FILE)")
-		keyFile    = flag.String("key", "", "Fichier de clé privée (défaut depuis REMOTESHELL_KEY_FILE)")
-		secretKey  = flag.String("secret", "", "Clé secrète JWT (défaut depuis REMOTESHELL_AUTH_TOKEN)")
-		dbPath     = flag.String("db", "", "Chemin de la base de données (défaut depuis REMOTESHELL_DB_PATH)")
-		verbose    = flag.Bool("verbose", false, "Mode verbeux")
+		host      = flag.String("host", "", "Adresse d'écoute (défaut depuis REMOTESHELL_SERVER_HOST)")
+		port      = flag.Int("port", 0, "Port d'écoute (défaut depuis REMOTESHELL_SERVER_PORT)")
+		tls       = flag.Bool("tls", false, "Utiliser TLS (défaut depuis REMOTESHELL_SERVER_TLS)")
+		certFile  = flag.String("cert", "", "Fichier de certificat (défaut depuis REMOTESHELL_CERT_FILE)")
+		keyFile   = flag.String("key", "", "Fichier de clé privée (défaut depuis REMOTESHELL_KEY_FILE)")
+		secretKey = flag.String("secret", "", "Clé secrète JWT (défaut depuis REMOTESHELL_AUTH_TOKEN)")
+		dbPath    = flag.String("db", "", "Chemin de la base de données (défaut depuis REMOTESHELL_DB_PATH)")
+		verbose   = flag.Bool("verbose", false, "Mode verbeux")
 	)
 	flag.Parse()
 
@@ -64,6 +64,18 @@ func main() {
 		config.LogLevel = "debug"
 	}
 
+	// Initialiser la base de données
+	databasePath := config.DatabasePath
+	if databasePath == "" {
+		databasePath = "./remoteshell.db"
+	}
+	db, err := server.NewDatabase(databasePath)
+	if err != nil {
+		log.Fatalf("Erreur d'initialisation de la base de données: %v", err)
+	}
+	defer db.Close()
+	log.Printf("Base de données initialisée: %s", databasePath)
+
 	// Créer le gestionnaire de tokens
 	tokenManager := auth.NewTokenManager(config.AuthToken, "remoteshell-server")
 
@@ -71,7 +83,7 @@ func main() {
 	hub := server.NewHub()
 
 	// Créer le serveur API
-	apiServer := server.NewAPIServer(hub, tokenManager, config.AuthToken, config)
+	apiServer := server.NewAPIServer(hub, tokenManager, config.AuthToken, config, db)
 
 	// Démarrer le hub
 	go hub.Run()
