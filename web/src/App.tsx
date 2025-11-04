@@ -4,6 +4,7 @@ import { WebSocketProvider } from './contexts/WebSocketContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
+import Download from './pages/Download'
 import Dashboard from './pages/Dashboard'
 import Agents from './pages/Agents'
 import AgentDetail from './pages/AgentDetail'
@@ -23,6 +24,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/download" element={<Download />} />
               <Route path="/" element={
                 <ProtectedRoute>
                   <Layout />

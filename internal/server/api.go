@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -81,6 +82,7 @@ func (api *APIServer) setupRoutes() {
 
 	// Routes publiques
 	api.router.GET("/health", api.healthCheck)
+	api.router.GET("/download/agent", api.downloadAgent)
 
 	// Routes OAuth2/Authentik
 	if api.oauth2Config != nil {
@@ -152,6 +154,38 @@ func (api *APIServer) healthCheck(c *gin.Context) {
 		"timestamp": time.Now(),
 		"agents":    api.hub.GetAgentCount(),
 	})
+}
+
+// downloadAgent sert le fichier binaire de l'agent pour téléchargement
+func (api *APIServer) downloadAgent(c *gin.Context) {
+	// Chercher le fichier dans plusieurs emplacements possibles
+	possiblePaths := []string{
+		"./build/remoteshell-agent",
+		"./build/web/remoteshell-agent",
+		"./remoteshell-agent",
+		"./web/public/remoteshell-agent",
+	}
+
+	var agentPath string
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			agentPath = path
+			break
+		}
+	}
+
+	if agentPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "fichier agent non trouvé"})
+		return
+	}
+
+	// Définir les en-têtes pour forcer le téléchargement
+	// Le nom du fichier sera celui du fichier source
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "remoteshell-agent"))
+	c.Header("Content-Type", "application/octet-stream")
+	
+	// Servir le fichier
+	c.File(agentPath)
 }
 
 // login authentifie un utilisateur
