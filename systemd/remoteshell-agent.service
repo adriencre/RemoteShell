@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/remoteshell
-ExecStart=/usr/local/bin/remoteshell-agent --server %SERVER_URL% --id %AGENT_ID% --name "%AGENT_NAME%" --token %AUTH_TOKEN%
+ExecStart=/usr/local/bin/remoteshell-agent
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -24,6 +24,14 @@ LimitNPROC=4096
 
 # Variables d'environnement
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Configuration de l'agent (modifiez ces valeurs selon votre environnement)
+Environment="REMOTESHELL_SERVER_HOST=10.0.0.59"
+Environment="REMOTESHELL_SERVER_PORT=8081"
+Environment="REMOTESHELL_AGENT_ID=serveur-impression-01"
+Environment="REMOTESHELL_AGENT_NAME=Serveur d'impression principal"
+Environment="REMOTESHELL_AUTH_TOKEN=test-token"
+# Optionnel : charger depuis un fichier
+# EnvironmentFile=/etc/remoteshell/agent.conf
 
 [Install]
 WantedBy=multi-user.target

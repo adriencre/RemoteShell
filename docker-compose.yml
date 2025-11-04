@@ -6,18 +6,26 @@ services:
     build: .
     container_name: remoteshell-server
     ports:
-      - "8080:8080"
+      - "8081:8081"
     environment:
       - REMOTESHELL_SERVER_HOST=0.0.0.0
-      - REMOTESHELL_SERVER_PORT=8080
+      - REMOTESHELL_SERVER_PORT=8081
       - REMOTESHELL_DB_PATH=/app/data/remoteshell.db
       - REMOTESHELL_LOG_LEVEL=info
+      - REMOTESHELL_AUTH_TOKEN=${REMOTESHELL_AUTH_TOKEN:-votre-token-securise}
+      # Configuration OAuth2 / Authentik
+      - REMOTESHELL_OAUTH2_ENABLED=${REMOTESHELL_OAUTH2_ENABLED:-true}
+      - REMOTESHELL_OAUTH2_PROVIDER=${REMOTESHELL_OAUTH2_PROVIDER:-authentik}
+      - REMOTESHELL_OAUTH2_CLIENT_ID=${REMOTESHELL_OAUTH2_CLIENT_ID}
+      - REMOTESHELL_OAUTH2_CLIENT_SECRET=${REMOTESHELL_OAUTH2_CLIENT_SECRET}
+      - REMOTESHELL_OAUTH2_BASE_URL=${REMOTESHELL_OAUTH2_BASE_URL}
+      - REMOTESHELL_OAUTH2_REDIRECT_URL=${REMOTESHELL_OAUTH2_REDIRECT_URL}
     volumes:
       - remoteshell-data:/app/data
       - ./certs:/app/certs:ro  # Pour les certificats TLS
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,12 +39,12 @@ services:
       - REMOTESHELL_AGENT_ID=agent-docker-001
       - REMOTESHELL_AGENT_NAME=Docker Agent
       - REMOTESHELL_SERVER_HOST=remoteshell-server
-      - REMOTESHELL_SERVER_PORT=8080
+      - REMOTESHELL_SERVER_PORT=8081
       - REMOTESHELL_AUTH_TOKEN=docker-agent-token
     depends_on:
       - remoteshell-server
     restart: unless-stopped
-    command: ["./remoteshell-agent", "--server", "remoteshell-server:8080", "--token", "docker-agent-token", "--name", "Docker Agent"]
+    command: ["./remoteshell-agent", "--server", "remoteshell-server:8081", "--token", "docker-agent-token", "--name", "Docker Agent"]
     # Désactiver par défaut - décommentez pour activer
     profiles:
       - agent

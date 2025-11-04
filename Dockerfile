@@ -40,8 +40,8 @@ RUN npm run build
 # Image finale
 FROM alpine:latest
 
-# Installer les dépendances runtime
-RUN apk --no-cache add ca-certificates tzdata
+# Installer les dépendances runtime (incluant wget pour healthcheck)
+RUN apk --no-cache add ca-certificates tzdata wget
 
 # Créer un utilisateur non-root
 RUN addgroup -g 1001 -S remoteshell && \
@@ -70,8 +70,8 @@ RUN chown -R remoteshell:remoteshell /app
 # Passer à l'utilisateur non-root
 USER remoteshell
 
-# Exposer le port
-EXPOSE 8080
+# Exposer le port (par défaut 8080, peut être changé via REMOTESHELL_SERVER_PORT)
+EXPOSE 8080 8081
 
 # Variables d'environnement par défaut (peuvent être surchargées)
 ENV REMOTESHELL_SERVER_HOST=0.0.0.0
