@@ -66,7 +66,7 @@ echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la
 echo ""
 
 # Normaliser l'URL
-# Pour rms.lfgroup.fr : HTTPS sans port pour téléchargement, mais garder le port pour WebSocket
+# Pour rms.lfgroup.fr : HTTPS sans port pour téléchargement, mais ajouter le port pour WebSocket
 if [[ "$SERVER_URL" == http://* ]] || [[ "$SERVER_URL" == https://* ]]; then
     # URL avec protocole déjà spécifié
     DOWNLOAD_BASE="$SERVER_URL"
@@ -77,6 +77,9 @@ if [[ "$SERVER_URL" == http://* ]] || [[ "$SERVER_URL" == https://* ]]; then
     # Si c'est HTTPS avec rms.lfgroup.fr, enlever le port de DOWNLOAD_BASE
     if [[ "$DOWNLOAD_BASE" == https://rms.lfgroup.fr:* ]]; then
         DOWNLOAD_BASE="https://rms.lfgroup.fr"
+    elif [[ "$DOWNLOAD_BASE" == https://rms.lfgroup.fr ]]; then
+        # HTTPS avec rms.lfgroup.fr mais sans port - ajouter le port pour WebSocket
+        SERVER_HOST_PORT="rms.lfgroup.fr:8081"
     fi
 else
     # URL sans protocole
@@ -89,8 +92,10 @@ else
             # Garder le port pour la connexion WebSocket
             SERVER_HOST_PORT="$SERVER_URL"
         else
+            # Pas de port spécifié - utiliser HTTPS sans port pour téléchargement
+            # Mais ajouter le port 8081 pour la connexion WebSocket
             DOWNLOAD_BASE="https://$SERVER_URL"
-            SERVER_HOST_PORT="$SERVER_URL"
+            SERVER_HOST_PORT="${SERVER_URL}:8081"
         fi
     else
         # Pour les autres domaines, utiliser HTTP et garder le port
@@ -180,12 +185,43 @@ echo ""
 echo "🔧 Installation en cours..."
 echo ""
 
+# Vérifier si l'agent est déjà installé
+if systemctl list-unit-files | grep -q "remoteshell-agent.service"; then
+    echo "⚠️  L'agent RemoteShell est déjà installé."
+    
+    # Arrêter le service s'il est actif
+    if systemctl is-active --quiet remoteshell-agent 2>/dev/null; then
+        echo "🛑 Arrêt du service..."
+        systemctl stop remoteshell-agent
+        sleep 1
+    fi
+    
+    # Désactiver le service (pour le réactiver après)
+    if systemctl is-enabled --quiet remoteshell-agent 2>/dev/null; then
+        echo "🔌 Désactivation temporaire du service..."
+        systemctl disable remoteshell-agent 2>/dev/null || true
+    fi
+fi
+
+# Vérifier si le fichier existe et est en cours d'utilisation
+if [ -f /usr/local/bin/remoteshell-agent ]; then
+    if lsof /usr/local/bin/remoteshell-agent >/dev/null 2>&1; then
+        echo "⚠️  Le fichier agent est en cours d'utilisation, arrêt forcé..."
+        systemctl stop remoteshell-agent 2>/dev/null || true
+        sleep 2
+    fi
+    echo "🗑️  Suppression de l'ancien agent..."
+fi
+
 # Créer les répertoires nécessaires
 mkdir -p /opt/remoteshell
 mkdir -p /etc/remoteshell
 
-# Copier l'agent
+# Copier l'agent (supprimer l'ancien si nécessaire)
 echo "📋 Installation de l'agent vers /usr/local/bin/..."
+if [ -f /usr/local/bin/remoteshell-agent ]; then
+    rm -f /usr/local/bin/remoteshell-agent
+fi
 cp "$TMP_DIR/remoteshell-agent" /usr/local/bin/remoteshell-agent
 chmod +x /usr/local/bin/remoteshell-agent
 
