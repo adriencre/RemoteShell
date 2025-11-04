@@ -191,11 +191,21 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 
 // downloadInstallScript sert le script d'installation de l'agent
 func (api *APIServer) downloadInstallScript(c *gin.Context) {
+	// Obtenir le répertoire de travail actuel
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = "."
+	}
+
 	// Chercher le script dans plusieurs emplacements possibles
 	possiblePaths := []string{
 		"./scripts/install-agent.sh",
 		"./install-agent.sh",
 		"./install-agent-simple.sh",
+		fmt.Sprintf("%s/scripts/install-agent.sh", workDir),
+		fmt.Sprintf("%s/install-agent.sh", workDir),
+		"/app/scripts/install-agent.sh", // Pour Docker
+		"/app/install-agent.sh",           // Pour Docker
 	}
 
 	var scriptPath string
@@ -207,9 +217,17 @@ func (api *APIServer) downloadInstallScript(c *gin.Context) {
 	}
 
 	if scriptPath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "script d'installation non trouvé"})
+		log.Printf("[API] downloadInstallScript - Script non trouvé. Répertoire de travail: %s", workDir)
+		log.Printf("[API] downloadInstallScript - Chemins testés: %v", possiblePaths)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "script d'installation non trouvé",
+			"workdir": workDir,
+			"hint":    "Le script doit être dans ./scripts/install-agent.sh ou dans le répertoire de travail",
+		})
 		return
 	}
+
+	log.Printf("[API] downloadInstallScript - Script trouvé: %s", scriptPath)
 
 	// Définir les en-têtes pour servir le script
 	c.Header("Content-Type", "text/x-shellscript")

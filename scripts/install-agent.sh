@@ -54,17 +54,37 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
 # Télécharger l'agent
+echo "🔗 Connexion à $DOWNLOAD_BASE/download/agent..."
 if command -v curl &> /dev/null; then
-    curl -f -s -o "$TMP_DIR/remoteshell-agent" "$DOWNLOAD_BASE/download/agent"
+    if ! curl -f -s -o "$TMP_DIR/remoteshell-agent" "$DOWNLOAD_BASE/download/agent"; then
+        echo ""
+        echo "❌ Erreur: Impossible de télécharger l'agent depuis $DOWNLOAD_BASE/download/agent"
+        echo ""
+        echo "💡 Vérifications possibles:"
+        echo "   1. Vérifiez que l'URL du serveur est correcte"
+        echo "   2. Vérifiez la connectivité réseau: ping $(echo $SERVER_HOST_PORT | cut -d: -f1)"
+        echo "   3. Vérifiez que le serveur est accessible: curl -I $DOWNLOAD_BASE/health"
+        echo "   4. Essayez avec l'adresse IP directement au lieu du nom de domaine"
+        exit 1
+    fi
 elif command -v wget &> /dev/null; then
-    wget -q -O "$TMP_DIR/remoteshell-agent" "$DOWNLOAD_BASE/download/agent"
+    if ! wget -q -O "$TMP_DIR/remoteshell-agent" "$DOWNLOAD_BASE/download/agent"; then
+        echo ""
+        echo "❌ Erreur: Impossible de télécharger l'agent depuis $DOWNLOAD_BASE/download/agent"
+        echo ""
+        echo "💡 Vérifications possibles:"
+        echo "   1. Vérifiez que l'URL du serveur est correcte"
+        echo "   2. Vérifiez la connectivité réseau"
+        echo "   3. Essayez avec l'adresse IP directement au lieu du nom de domaine"
+        exit 1
+    fi
 else
     echo "❌ Erreur: curl ou wget est requis pour télécharger l'agent"
     exit 1
 fi
 
 if [ ! -f "$TMP_DIR/remoteshell-agent" ] || [ ! -s "$TMP_DIR/remoteshell-agent" ]; then
-    echo "❌ Erreur: Le téléchargement de l'agent a échoué"
+    echo "❌ Erreur: Le fichier téléchargé est vide ou invalide"
     exit 1
 fi
 

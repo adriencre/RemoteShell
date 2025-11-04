@@ -62,6 +62,10 @@ COPY --from=web-builder /app/web/dist ./build/web
 COPY --from=builder /app/README.md .
 COPY --from=builder /app/LICENSE* .
 
+# Copier le script d'installation de l'agent
+COPY --from=builder /app/scripts/install-agent.sh ./scripts/install-agent.sh
+RUN chmod +x ./scripts/install-agent.sh
+
 # Créer le répertoire de données (avant changement d'utilisateur)
 RUN mkdir -p /app/data
 
