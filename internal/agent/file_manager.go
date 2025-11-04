@@ -270,7 +270,7 @@ func (fm *FileManager) getFullPath(path string) string {
 }
 
 // isPathSafe vérifie qu'un chemin est dans le répertoire de base
-func (fm *FileManager) isPathSafe(path string) bool {
+func (fm *FileManager) isPathSafe(_ string) bool {
 	// Mode root : autoriser tous les chemins
 	// En production, vous pourriez vouloir réactiver les restrictions de sécurité
 	return true

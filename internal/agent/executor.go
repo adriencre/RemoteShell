@@ -96,18 +96,6 @@ func (e *Executor) initShell() error {
 	return nil
 }
 
-// sendCommand envoie une commande au shell
-func (e *Executor) sendCommand(command string) error {
-	if !e.initialized {
-		if err := e.initShell(); err != nil {
-			return err
-		}
-	}
-
-	_, err := e.shellIn.Write([]byte(command + "\n"))
-	return err
-}
-
 // readOutput lit la sortie du shell avec un marqueur de fin
 func (e *Executor) readOutput(marker string, timeout time.Duration) (string, error) {
 	if !e.initialized {
@@ -170,18 +158,52 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	e.shellMutex.Lock()
 	defer e.shellMutex.Unlock()
 
-	// Changer de répertoire si spécifié
-	if cmdData.WorkingDir != "" && cmdData.WorkingDir != e.workingDir {
-		e.shellIn.Write([]byte(fmt.Sprintf("cd %s\n", cmdData.WorkingDir)))
-		e.workingDir = cmdData.WorkingDir
-		time.Sleep(50 * time.Millisecond) // Attendre que le cd soit effectué
-	}
-
 	// Construire la commande complète
 	fullCommand := cmdData.Command
 	if len(cmdData.Args) > 0 {
 		fullCommand += " " + strings.Join(cmdData.Args, " ")
 	}
+
+	// Détecter les commandes cd pour mettre à jour le workingDir
+	// Le shell persistant garde déjà l'état, on doit juste mettre à jour notre tracking
+	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") {
+		// Extraire le chemin du cd
+		cdParts := strings.Fields(strings.TrimSpace(fullCommand))
+		if len(cdParts) >= 2 {
+			newDir := cdParts[1]
+			// Gérer les cas spéciaux comme cd - ou cd ~
+			switch newDir {
+			case "-":
+				// cd - retourne au répertoire précédent, difficile à tracker
+				// Laisser le shell gérer ça
+			case "~":
+				// cd ~ va au home directory
+				e.workingDir = os.Getenv("HOME")
+			default:
+				// Mettre à jour le workingDir
+				// Si c'est un chemin relatif, on le garde relatif (le shell le résoudra)
+				// Si c'est un chemin absolu, on l'utilise tel quel
+				if strings.HasPrefix(newDir, "/") {
+					e.workingDir = newDir
+				} else {
+					// Chemin relatif - on garde le tracking mais le shell gère le chemin réel
+					// On ne peut pas facilement résoudre le chemin relatif sans connaître le pwd actuel
+					// Donc on laisse le shell gérer et on met juste à jour notre tracking approximatif
+					e.workingDir = newDir
+				}
+			}
+		}
+	} else if cmdData.WorkingDir != "" && cmdData.WorkingDir != "." {
+		// Si un workingDir est explicitement spécifié (pas "."), l'utiliser
+		// Ignorer "." car cela signifie "utiliser le répertoire courant du shell"
+		if cmdData.WorkingDir != e.workingDir {
+			e.shellIn.Write([]byte(fmt.Sprintf("cd %s\n", cmdData.WorkingDir)))
+			e.workingDir = cmdData.WorkingDir
+			time.Sleep(50 * time.Millisecond) // Attendre que le cd soit effectué
+		}
+	}
+	// Si workingDir est "." ou vide, on utilise le répertoire courant du shell persistant
+	// Pas besoin de changer de répertoire
 
 	// Générer un marqueur unique pour cette commande
 	marker := fmt.Sprintf("__CMD_END_%d__", time.Now().UnixNano())
@@ -205,6 +227,13 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 
 	output, err := e.readOutput(marker, timeout)
 	duration := time.Since(start)
+
+	// Après l'exécution, si c'était un cd réussi, mettre à jour le workingDir réel
+	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") && err == nil {
+		// Essayer de récupérer le répertoire actuel avec pwd
+		// Pour l'instant, on fait confiance au cd qui a été exécuté
+		// Le workingDir a déjà été mis à jour avant
+	}
 
 	// Analyser la sortie
 	stdout := strings.TrimSpace(output)

@@ -62,15 +62,31 @@ while [ -z "$SERVER_URL" ]; do
     fi
 done
 
-# Demander si on veut utiliser TLS (pour tester)
-echo ""
-read -p "Utiliser TLS/WSS pour la connexion WebSocket ? [O/n]: " USE_TLS_INPUT
-USE_TLS_OPTION=""
-if [[ ! "$USE_TLS_INPUT" =~ ^[Nn]$ ]]; then
+# Extraire le port de l'URL pour vérifier si TLS est nécessaire
+EXTRACTED_PORT=""
+if [[ "$SERVER_URL" == *":"* ]]; then
+    EXTRACTED_PORT="${SERVER_URL##*:}"
+fi
+
+# Vérifier si le port 443 est utilisé (nécessite TLS)
+NEEDS_TLS=false
+if [[ "$EXTRACTED_PORT" == "443" ]] || [[ "$SERVER_URL" == *"https://"* ]]; then
+    NEEDS_TLS=true
+    echo ""
+    echo "ℹ️  Le port 443 nécessite TLS/WSS. TLS sera activé automatiquement."
     USE_TLS_OPTION="--tls"
-    echo "✅ TLS/WSS activé"
+    echo "✅ TLS/WSS activé (requis pour le port 443)"
 else
-    echo "⚠️  TLS/WSS désactivé (connexion non sécurisée)"
+    # Demander si on veut utiliser TLS (pour tester)
+    echo ""
+    read -p "Utiliser TLS/WSS pour la connexion WebSocket ? [O/n]: " USE_TLS_INPUT
+    USE_TLS_OPTION=""
+    if [[ ! "$USE_TLS_INPUT" =~ ^[Nn]$ ]]; then
+        USE_TLS_OPTION="--tls"
+        echo "✅ TLS/WSS activé"
+    else
+        echo "⚠️  TLS/WSS désactivé (connexion non sécurisée)"
+    fi
 fi
 
 echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la connexion de l'agent au serveur."
@@ -248,30 +264,35 @@ EOF
 chmod 600 /etc/remoteshell/agent.conf
 
 # Normaliser l'URL et déterminer le port final
-# Si l'utilisateur a choisi de ne pas utiliser TLS, ne pas forcer le port 443
 if [[ -z "$USE_TLS_OPTION" ]]; then
-    # Pas de TLS - utiliser le port tel quel ou le port 8081 par défaut (port du serveur)
-    if [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
+    # Pas de TLS - utiliser le port tel quel ou le port 8081 par défaut
+    # Si l'utilisateur a entré le port 443, on ne peut pas continuer sans TLS
+    if [[ "$SERVER_HOST_PORT" == *":443" ]]; then
+        echo "❌ Erreur: Le port 443 nécessite TLS/WSS."
+        echo "   Le script va utiliser TLS automatiquement."
+        USE_TLS_OPTION="--tls"
+        USE_TLS="$USE_TLS_OPTION"
+    elif [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
         SERVER_HOST_PORT="rms.lfgroup.fr:8081"
         echo "ℹ️  Connexion WS (non sécurisée) sur le port 8081"
+        USE_TLS=""
+    else
+        USE_TLS=""
     fi
 else
-    # TLS activé - pour rms.lfgroup.fr, utiliser le port 443
+    # TLS activé
     if [[ "$SERVER_HOST_PORT" == *"rms.lfgroup.fr"* ]]; then
-        # Toujours utiliser le port 443 pour WSS via le reverse proxy
-        if [[ "$SERVER_HOST_PORT" == *":8081" ]]; then
+        # Si l'utilisateur a spécifié un port autre que 443, utiliser 443 pour WSS
+        if [[ "$SERVER_HOST_PORT" == *":8081" ]] || [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
             SERVER_HOST_PORT="rms.lfgroup.fr:443"
-            echo "ℹ️  Le port 8081 est pour la connexion interne. Utilisation du port 443 (WSS) via le reverse proxy."
-        elif [[ "$SERVER_HOST_PORT" == "rms.lfgroup.fr" ]]; then
-            SERVER_HOST_PORT="rms.lfgroup.fr:443"
+            echo "ℹ️  Utilisation du port 443 (WSS) via le reverse proxy pour rms.lfgroup.fr"
         fi
         echo "ℹ️  Configuration: WSS (WebSocket Secure) sur $SERVER_HOST_PORT"
         echo "⚠️  IMPORTANT: Assurez-vous que votre reverse proxy (nginx) est configuré pour les WebSockets !"
         echo "   Voir TROUBLESHOOTING_WEBSOCKET.md pour la configuration nginx requise."
     fi
+    USE_TLS="$USE_TLS_OPTION"
 fi
-
-USE_TLS="$USE_TLS_OPTION"
 
 # Créer le fichier de service systemd
 echo "📄 Création du service systemd..."

@@ -167,15 +167,16 @@ func (c *Client) connect() error {
 	// Connexion WebSocket
 	conn, resp, err := dialer.Dial(serverURL, nil)
 	if err != nil {
-		errorMsg := fmt.Sprintf("échec de la connexion WebSocket: %v", err)
 		if resp != nil {
-			errorMsg += fmt.Sprintf(" (Status: %d)", resp.StatusCode)
+			statusCode := resp.StatusCode
+			var bodyStr string
 			if resp.Body != nil {
 				bodyBytes, _ := io.ReadAll(resp.Body)
-				errorMsg += fmt.Sprintf(" (Body: %s)", string(bodyBytes))
+				bodyStr = string(bodyBytes)
 			}
+			return fmt.Errorf("échec de la connexion WebSocket: %v (Status: %d, Body: %s)", err, statusCode, bodyStr)
 		}
-		return fmt.Errorf(errorMsg)
+		return fmt.Errorf("échec de la connexion WebSocket: %v", err)
 	}
 
 	c.mu.Lock()
