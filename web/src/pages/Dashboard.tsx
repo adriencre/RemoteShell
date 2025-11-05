@@ -11,7 +11,8 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
-  ArrowRight
+  ArrowRight,
+  Settings
 } from 'lucide-react'
 
 interface Agent {
@@ -262,11 +263,11 @@ const Dashboard: React.FC = () => {
                           <FolderOpen className="h-4 w-4" />
                         </Link>
                         <Link
-                          to={`/agent/${agent.id}/printers`}
+                          to={`/agent/${agent.id}/services`}
                           className="btn btn-sm btn-secondary"
-                          title="Imprimantes"
+                          title="Services"
                         >
-                          <Printer className="h-4 w-4" />
+                          <Settings className="h-4 w-4" />
                         </Link>
                       </div>
                     </div>

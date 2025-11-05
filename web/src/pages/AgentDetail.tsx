@@ -4,7 +4,6 @@ import axios from 'axios'
 import { 
   Server, 
   Clock, 
-  Printer, 
   Terminal,
   FolderOpen,
   RefreshCw,
@@ -280,77 +279,37 @@ const AgentDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Printers */}
-      <div className="card">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Imprimantes ({agent.printers?.length || 0})</h2>
-        </div>
-        
-        {!agent.printers || agent.printers.length === 0 ? (
-          <div className="px-6 py-12 text-center">
-            <Printer className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Aucune imprimante</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Aucune imprimante n'est configurée sur cet agent.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {agent.printers.map((printer, index) => (
-              <div key={index} className="px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Printer className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{printer.name || `Imprimante ${index + 1}`}</p>
-                      <p className="text-sm text-gray-500">{printer.status || 'Statut inconnu'}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Actions */}
       <div className="card p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Actions disponibles</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Link
             to={`/agent/${agent.id}/terminal`}
-            className="btn btn-primary w-full"
+            className="btn btn-primary w-full flex items-center justify-center"
           >
             <Terminal className="h-4 w-4 mr-2" />
             Terminal
           </Link>
           <Link
             to={`/agent/${agent.id}/files`}
-            className="btn btn-secondary w-full"
+            className="btn btn-secondary w-full flex items-center justify-center"
           >
             <FolderOpen className="h-4 w-4 mr-2" />
             Gestionnaire de fichiers
           </Link>
           <Link
             to={`/agent/${agent.id}/services`}
-            className="btn btn-secondary w-full"
+            className="btn btn-secondary w-full flex items-center justify-center"
           >
             <Settings className="h-4 w-4 mr-2" />
             Gestion des services
           </Link>
           <Link
             to={`/agent/${agent.id}/logs`}
-            className="btn btn-secondary w-full"
+            className="btn btn-secondary w-full flex items-center justify-center"
           >
             <FileText className="h-4 w-4 mr-2" />
             Visualisation des logs
-          </Link>
-          <Link
-            to={`/agent/${agent.id}/printers`}
-            className="btn btn-secondary w-full"
-          >
-            <Printer className="h-4 w-4 mr-2" />
-            Gestion des imprimantes
           </Link>
         </div>
       </div>
