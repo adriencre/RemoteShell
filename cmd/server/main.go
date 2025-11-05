@@ -85,8 +85,8 @@ func main() {
 	// Créer le gestionnaire de tokens
 	tokenManager := auth.NewTokenManager(config.AuthToken, "remoteshell-server")
 
-	// Créer le hub
-	hub := server.NewHub()
+	// Créer le hub avec la base de données
+	hub := server.NewHub(db)
 
 	// Créer le serveur API
 	apiServer := server.NewAPIServer(hub, tokenManager, config.AuthToken, config, db)

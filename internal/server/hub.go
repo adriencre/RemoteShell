@@ -56,11 +56,12 @@ type Hub struct {
 	registerWeb   chan *WebClient
 	unregisterWeb chan *WebClient
 	broadcast     chan *common.Message
+	db            *Database // Référence à la base de données pour sauvegarder les agents
 	mu            sync.RWMutex
 }
 
 // NewHub crée un nouveau hub
-func NewHub() *Hub {
+func NewHub(db *Database) *Hub {
 	return &Hub{
 		agents:        make(map[string]*Agent),
 		webClients:    make(map[string]*WebClient),
@@ -70,6 +71,7 @@ func NewHub() *Hub {
 		registerWeb:   make(chan *WebClient),
 		unregisterWeb: make(chan *WebClient),
 		broadcast:     make(chan *common.Message, 256),
+		db:            db,
 	}
 }
 
@@ -77,6 +79,10 @@ func NewHub() *Hub {
 func (h *Hub) Run() {
 	ticker := time.NewTicker(30 * time.Second) // Nettoyage périodique
 	defer ticker.Stop()
+	
+	// Ticker pour mettre à jour LastSeen des agents actifs
+	updateTicker := time.NewTicker(60 * time.Second) // Mise à jour toutes les minutes
+	defer updateTicker.Stop()
 
 	for {
 		select {
@@ -97,6 +103,10 @@ func (h *Hub) Run() {
 
 		case <-ticker.C:
 			h.cleanupInactiveAgents()
+			
+		case <-updateTicker.C:
+			// Mettre à jour LastSeen des agents actifs dans la base de données
+			h.updateAgentsLastSeen()
 		}
 	}
 }
@@ -112,6 +122,23 @@ func (h *Hub) registerAgent(agent *Agent) {
 
 	h.agents[agent.ID] = agent
 	log.Printf("Agent enregistré: %s (%s) depuis %s", agent.Name, agent.ID, agent.Conn.RemoteAddr())
+	
+	// Sauvegarder l'agent dans la base de données
+	if h.db != nil {
+		agentRecord := &AgentRecord{
+			ID:        agent.ID,
+			Name:      agent.Name,
+			LastSeen:  agent.LastSeen,
+			Status:    "online",
+			IPAddress: agent.Conn.RemoteAddr(),
+			UpdatedAt: time.Now(),
+		}
+		if err := h.db.SaveAgent(agentRecord); err != nil {
+			log.Printf("Erreur lors de la sauvegarde de l'agent %s en base: %v", agent.ID, err)
+		} else {
+			log.Printf("Agent %s sauvegardé dans la base de données", agent.ID)
+		}
+	}
 }
 
 // unregisterAgent désenregistre un agent
@@ -122,6 +149,19 @@ func (h *Hub) unregisterAgent(agent *Agent) {
 	if _, exists := h.agents[agent.ID]; exists {
 		delete(h.agents, agent.ID)
 		log.Printf("Agent désenregistré: %s (%s)", agent.Name, agent.ID)
+		
+		// Mettre à jour le statut dans la base de données
+		if h.db != nil {
+			agentRecord := &AgentRecord{
+				ID:        agent.ID,
+				Status:    "offline",
+				LastSeen:  time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			if err := h.db.SaveAgent(agentRecord); err != nil {
+				log.Printf("Erreur lors de la mise à jour du statut de l'agent %s: %v", agent.ID, err)
+			}
+		}
 	}
 }
 
@@ -208,6 +248,33 @@ func (h *Hub) cleanupInactiveAgents() {
 			log.Printf("Nettoyage de l'agent inactif: %s (%s)", agent.Name, id)
 			agent.Conn.Close()
 			delete(h.agents, id)
+		}
+	}
+}
+
+// updateAgentsLastSeen met à jour LastSeen des agents actifs dans la base de données
+func (h *Hub) updateAgentsLastSeen() {
+	if h.db == nil {
+		return
+	}
+	
+	h.mu.RLock()
+	agents := make([]*Agent, 0, len(h.agents))
+	for _, agent := range h.agents {
+		agents = append(agents, agent)
+	}
+	h.mu.RUnlock()
+	
+	for _, agent := range agents {
+		agentRecord := &AgentRecord{
+			ID:        agent.ID,
+			Name:      agent.Name,
+			LastSeen:  agent.LastSeen,
+			Status:    "online",
+			UpdatedAt: time.Now(),
+		}
+		if err := h.db.SaveAgent(agentRecord); err != nil {
+			log.Printf("Erreur lors de la mise à jour LastSeen de l'agent %s: %v", agent.ID, err)
 		}
 	}
 }
