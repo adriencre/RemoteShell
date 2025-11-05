@@ -402,11 +402,29 @@ func (api *APIServer) updateAgentMetadata(c *gin.Context) {
 		return
 	}
 
-	// Mettre à jour les métadonnées
+	// Mettre à jour les métadonnées en mémoire
 	api.hub.SetAgentMetadata(agent.ID, &AgentMetadata{
 		Franchise: metadata.Franchise,
 		Category:  metadata.Category,
 	})
+
+	// Sauvegarder dans la base de données
+	if api.db != nil {
+		agentRecord := &AgentRecord{
+			ID:        agent.ID,
+			Name:      agent.Name,
+			Franchise: metadata.Franchise,
+			Category:  metadata.Category,
+			LastSeen:  agent.LastSeen,
+			Status:    "online",
+			UpdatedAt: time.Now(),
+		}
+		if err := api.db.SaveAgent(agentRecord); err != nil {
+			log.Printf("Erreur lors de la sauvegarde des métadonnées de l'agent %s en base: %v", agent.ID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur lors de la sauvegarde en base de données"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "métadonnées mises à jour",

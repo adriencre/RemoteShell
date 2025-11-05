@@ -123,8 +123,18 @@ func (h *Hub) registerAgent(agent *Agent) {
 	h.agents[agent.ID] = agent
 	log.Printf("Agent enregistré: %s (%s) depuis %s", agent.Name, agent.ID, agent.Conn.RemoteAddr())
 	
-	// Sauvegarder l'agent dans la base de données
+	// Charger les métadonnées depuis la base de données si elles existent
 	if h.db != nil {
+		existingAgent, err := h.db.GetAgent(agent.ID)
+		if err == nil && existingAgent != nil {
+			// Charger les métadonnées depuis la base de données
+			h.metadata[agent.ID] = &AgentMetadata{
+				Franchise: existingAgent.Franchise,
+				Category:  existingAgent.Category,
+			}
+		}
+		
+		// Sauvegarder ou mettre à jour l'agent dans la base de données
 		agentRecord := &AgentRecord{
 			ID:        agent.ID,
 			Name:      agent.Name,
@@ -132,6 +142,11 @@ func (h *Hub) registerAgent(agent *Agent) {
 			Status:    "online",
 			IPAddress: agent.Conn.RemoteAddr(),
 			UpdatedAt: time.Now(),
+		}
+		// Préserver les métadonnées existantes si elles existent
+		if existingAgent != nil {
+			agentRecord.Franchise = existingAgent.Franchise
+			agentRecord.Category = existingAgent.Category
 		}
 		if err := h.db.SaveAgent(agentRecord); err != nil {
 			log.Printf("Erreur lors de la sauvegarde de l'agent %s en base: %v", agent.ID, err)
