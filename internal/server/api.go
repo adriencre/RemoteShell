@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -251,33 +252,44 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	// être pour une autre architecture et causer des problèmes d'exécution
 
 	var agentPath string
+	var checkedPaths []string
 	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
+		checkedPaths = append(checkedPaths, path)
+		fileInfo, err := os.Stat(path)
+		if err == nil {
 			agentPath = path
-			log.Printf("[API] downloadAgent - Binaire spécifique trouvé: %s (demandé: os=%s, arch=%s)", agentPath, osParam, archParam)
+			log.Printf("[API] downloadAgent - ✅ Binaire spécifique trouvé: %s (taille: %d bytes, demandé: os=%s, arch=%s)", agentPath, fileInfo.Size(), osParam, archParam)
 			break
+		} else {
+			log.Printf("[API] downloadAgent - ❌ Chemin non trouvé: %s (erreur: %v)", path, err)
 		}
 	}
 
 	if agentPath == "" {
-		log.Printf("[API] downloadAgent - Binaire spécifique non trouvé pour os=%s, arch=%s", osParam, archParam)
-		log.Printf("[API] downloadAgent - Chemins testés: %v", possiblePaths)
+		log.Printf("[API] downloadAgent - ❌ Binaire spécifique non trouvé pour os=%s, arch=%s", osParam, archParam)
+		log.Printf("[API] downloadAgent - Répertoire de travail: %s", workDir)
+		log.Printf("[API] downloadAgent - Chemins testés: %v", checkedPaths)
 		
 		// Vérifier quels binaires sont disponibles
 		availableBinaries := []string{}
 		// Chercher dans plusieurs emplacements possibles
 		buildDirs := []string{"./build", fmt.Sprintf("%s/build", workDir)}
 		for _, buildDir := range buildDirs {
+			log.Printf("[API] downloadAgent - Recherche dans: %s", buildDir)
 			if entries, err := os.ReadDir(buildDir); err == nil {
+				log.Printf("[API] downloadAgent - Répertoire %s existe, %d entrées trouvées", buildDir, len(entries))
 				for _, entry := range entries {
 					if !entry.IsDir() && (strings.HasPrefix(entry.Name(), "agent-") || entry.Name() == "rms-agent") {
 						availableBinaries = append(availableBinaries, entry.Name())
+						log.Printf("[API] downloadAgent - Binaire trouvé: %s", entry.Name())
 					}
 				}
 				// Si on a trouvé des binaires, arrêter la recherche
 				if len(availableBinaries) > 0 {
 					break
 				}
+			} else {
+				log.Printf("[API] downloadAgent - Répertoire %s n'existe pas ou erreur: %v", buildDir, err)
 			}
 		}
 		

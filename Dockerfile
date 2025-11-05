@@ -16,9 +16,24 @@ RUN go mod download
 # Copier le code source
 COPY . .
 
-# Build des binaires
+# Build des binaires multi-plateformes pour l'API /download/agent
+# Créer le répertoire build
+RUN mkdir -p build
+
+# Build du serveur (pour l'exécution dans le conteneur)
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o remoteshell-server ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o rms-agent ./cmd/agent
+
+# Build des agents multi-plateformes (pour téléchargement via API)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-linux-amd64 ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-linux-arm64 ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-darwin-amd64 ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-darwin-arm64 ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-windows-amd64.exe ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-windows-arm64.exe ./cmd/agent
+
+# Build des serveurs multi-plateformes (optionnel, pour téléchargement)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/server-linux-amd64 ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/server-linux-arm64 ./cmd/server
 
 # Build de l'interface web
 FROM node:18-alpine AS web-builder
@@ -50,13 +65,23 @@ RUN addgroup -g 1001 -S remoteshell && \
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Copier les binaires depuis le builder
-COPY --from=builder /app/remoteshell-server .
-COPY --from=builder /app/rms-agent .
+# Créer le répertoire build
+RUN mkdir -p ./build
 
-# Copier l'interface web depuis le web-builder
-RUN mkdir -p ./build/web
+# Copier le serveur depuis le builder
+COPY --from=builder /app/remoteshell-server .
+
+# Copier les binaires multi-plateformes depuis le builder
+# Note: on copie tout le répertoire build puis on remplace web/
+COPY --from=builder /app/build ./build-temp
+
+# Copier l'interface web depuis le web-builder (remplace le répertoire web s'il existe)
 COPY --from=web-builder /app/web/dist ./build/web
+
+# Déplacer les binaires depuis build-temp vers build (en excluant web/)
+RUN mv ./build-temp/agent-* ./build/ 2>/dev/null || true && \
+    mv ./build-temp/server-* ./build/ 2>/dev/null || true && \
+    rm -rf ./build-temp
 
 # Copier les fichiers de configuration
 COPY --from=builder /app/README.md .
