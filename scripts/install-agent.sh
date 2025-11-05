@@ -93,41 +93,53 @@ echo "ℹ️  Cette adresse sera utilisée pour télécharger l'agent et pour la
 echo ""
 
 # Normaliser l'URL
-# Pour rms.lfgroup.fr : HTTPS sans port pour téléchargement, mais ajouter le port pour WebSocket
+# Extraire le domaine et le port
 if [[ "$SERVER_URL" == http://* ]] || [[ "$SERVER_URL" == https://* ]]; then
     # URL avec protocole déjà spécifié
-    DOWNLOAD_BASE="$SERVER_URL"
-    # Extraire host:port pour la configuration WebSocket
-    SERVER_HOST_PORT="${SERVER_URL#http://}"
-    SERVER_HOST_PORT="${SERVER_HOST_PORT#https://}"
-    
-    # Si c'est HTTPS avec rms.lfgroup.fr, enlever le port de DOWNLOAD_BASE
-    if [[ "$DOWNLOAD_BASE" == https://rms.lfgroup.fr:* ]]; then
-        DOWNLOAD_BASE="https://rms.lfgroup.fr"
-    elif [[ "$DOWNLOAD_BASE" == https://rms.lfgroup.fr ]]; then
-        # HTTPS avec rms.lfgroup.fr mais sans port - ajouter le port pour WebSocket
-        SERVER_HOST_PORT="rms.lfgroup.fr:8081"
-    fi
+    PROTOCOL="${SERVER_URL%%://*}"
+    HOST_PORT="${SERVER_URL#*://}"
 else
     # URL sans protocole
-    if [[ "$SERVER_URL" == *"rms.lfgroup.fr"* ]]; then
-        # Pour rms.lfgroup.fr, utiliser HTTPS sans port pour téléchargement
-        if [[ "$SERVER_URL" == *:* ]]; then
-            # Extraire le domaine sans le port pour HTTPS
-            DOMAIN_ONLY="${SERVER_URL%%:*}"
-            DOWNLOAD_BASE="https://$DOMAIN_ONLY"
-            # Garder le port pour la connexion WebSocket
-            SERVER_HOST_PORT="$SERVER_URL"
-        else
-            # Pas de port spécifié - utiliser HTTPS sans port pour téléchargement
-            # Mais ajouter le port 8081 pour la connexion WebSocket
-            DOWNLOAD_BASE="https://$SERVER_URL"
-            SERVER_HOST_PORT="${SERVER_URL}:8081"
-        fi
+    HOST_PORT="$SERVER_URL"
+    # Déterminer le protocole selon le port ou TLS
+    if [[ "$NEEDS_TLS" == true ]] || [[ "$HOST_PORT" == *:443 ]]; then
+        PROTOCOL="https"
     else
-        # Pour les autres domaines, utiliser HTTP et garder le port
-        DOWNLOAD_BASE="http://$SERVER_URL"
-        SERVER_HOST_PORT="$SERVER_URL"
+        PROTOCOL="http"
+    fi
+fi
+
+# Extraire le domaine et le port
+if [[ "$HOST_PORT" == *":"* ]]; then
+    DOMAIN_ONLY="${HOST_PORT%%:*}"
+    PORT_PART="${HOST_PORT##*:}"
+else
+    DOMAIN_ONLY="$HOST_PORT"
+    PORT_PART=""
+fi
+
+# Si le port est 443, utiliser HTTPS et enlever le port de l'URL de téléchargement
+# (HTTPS utilise 443 par défaut, donc pas besoin de le spécifier)
+if [[ "$PORT_PART" == "443" ]] || [[ "$NEEDS_TLS" == true ]]; then
+    DOWNLOAD_BASE="https://$DOMAIN_ONLY"
+    # Pour WebSocket, utiliser le domaine avec le port 443
+    SERVER_HOST_PORT="$DOMAIN_ONLY:443"
+elif [[ "$PORT_PART" != "" ]]; then
+    # Autre port spécifié
+    if [[ "$PROTOCOL" == "https" ]] || [[ "$NEEDS_TLS" == true ]]; then
+        DOWNLOAD_BASE="https://$DOMAIN_ONLY:$PORT_PART"
+    else
+        DOWNLOAD_BASE="http://$DOMAIN_ONLY:$PORT_PART"
+    fi
+    SERVER_HOST_PORT="$DOMAIN_ONLY:$PORT_PART"
+else
+    # Pas de port spécifié
+    if [[ "$PROTOCOL" == "https" ]] || [[ "$SERVER_URL" == *"rms.lfgroup.fr"* ]]; then
+        DOWNLOAD_BASE="https://$DOMAIN_ONLY"
+        SERVER_HOST_PORT="$DOMAIN_ONLY:8081"
+    else
+        DOWNLOAD_BASE="http://$DOMAIN_ONLY"
+        SERVER_HOST_PORT="$DOMAIN_ONLY:8080"
     fi
 fi
 
