@@ -694,13 +694,19 @@ func (api *APIServer) listFiles(c *gin.Context) {
 		path = "/"
 	}
 
-	// Vérifier d'abord le cache
-	if files, exists := agent.GetFileCache(path); exists {
-		c.JSON(http.StatusOK, gin.H{
-			"files": files,
-			"path":  path,
-		})
-		return
+	// Vérifier d'abord le cache (sauf si on force le rafraîchissement via paramètre _t)
+	forceRefresh := c.Query("_t") != ""
+	if !forceRefresh {
+		if files, exists := agent.GetFileCache(path); exists {
+			c.JSON(http.StatusOK, gin.H{
+				"files": files,
+				"path":  path,
+			})
+			return
+		}
+	} else {
+		log.Printf("[API] listFiles - Rafraîchissement forcé du cache pour: %s", path)
+		agent.ClearFileCache(path)
 	}
 
 	// Si pas dans le cache, demander à l'agent de lister les fichiers
@@ -888,6 +894,14 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 
 	log.Printf("[API] uploadFile - Confirmation reçue, upload réussi pour %s", path)
 
+	// Invalider le cache des fichiers pour le répertoire parent
+	// pour forcer une relecture lors du prochain listFiles
+	parentPath := getParentPath(path)
+	if parentPath != "" {
+		log.Printf("[API] uploadFile - Invalidation du cache pour le répertoire parent: %s", parentPath)
+		agent.ClearFileCache(parentPath)
+	}
+
 	// Enregistrer l'opération dans les logs
 	if api.db != nil {
 		fileLog := &FileLog{
@@ -908,6 +922,33 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 		"path":    path,
 		"size":    file.Size,
 	})
+}
+
+// getParentPath extrait le chemin parent d'un chemin de fichier
+func getParentPath(filePath string) string {
+	if filePath == "" || filePath == "/" {
+		return "/"
+	}
+
+	// Normaliser les séparateurs
+	filePath = strings.ReplaceAll(filePath, "\\", "/")
+	
+	// Enlever le dernier séparateur s'il existe
+	filePath = strings.TrimSuffix(filePath, "/")
+	
+	// Trouver le dernier séparateur
+	lastSlash := strings.LastIndex(filePath, "/")
+	if lastSlash == -1 {
+		return "/"
+	}
+	
+	// Extraire le parent
+	parent := filePath[:lastSlash]
+	if parent == "" {
+		return "/"
+	}
+	
+	return parent
 }
 
 // downloadFile télécharge un fichier depuis un agent
@@ -1008,6 +1049,13 @@ func (api *APIServer) deleteFile(c *gin.Context) {
 		return
 	}
 
+	// Invalider le cache des fichiers pour le répertoire parent
+	parentPath := getParentPath(path)
+	if parentPath != "" {
+		log.Printf("[API] deleteFile - Invalidation du cache pour le répertoire parent: %s", parentPath)
+		agent.ClearFileCache(parentPath)
+	}
+
 	// Enregistrer l'opération réussie dans les logs
 	if api.db != nil {
 		fileLog := &FileLog{
@@ -1095,6 +1143,13 @@ func (api *APIServer) createDirectory(c *gin.Context) {
 		
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
+	}
+
+	// Invalider le cache des fichiers pour le répertoire parent
+	parentPath := getParentPath(req.Path)
+	if parentPath != "" {
+		log.Printf("[API] createDirectory - Invalidation du cache pour le répertoire parent: %s", parentPath)
+		agent.ClearFileCache(parentPath)
 	}
 
 	// Enregistrer l'opération réussie dans les logs

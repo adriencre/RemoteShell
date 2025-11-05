@@ -37,12 +37,14 @@ const FileManager: React.FC = () => {
     loadFiles(currentPath)
   }, [currentPath, id])
 
-  const loadFiles = async (path: string) => {
+  const loadFiles = async (path: string, forceRefresh: boolean = false) => {
     setIsLoading(true)
     setError('')
     
     try {
-      const response = await axios.get(`/api/agents/${id}/files?path=${encodeURIComponent(path)}`)
+      // Ajouter un paramètre de cache-busting si on force le rafraîchissement
+      const cacheBuster = forceRefresh ? `&_t=${Date.now()}` : ''
+      const response = await axios.get(`/api/agents/${id}/files?path=${encodeURIComponent(path)}${cacheBuster}`)
       
       // Convertir les données de l'API en format FileItem
       const apiFiles = response.data.files || []
@@ -140,7 +142,10 @@ const FileManager: React.FC = () => {
     
     try {
       await axios.delete(`/api/agents/${id}/files?path=${encodeURIComponent(filePath)}`)
-      loadFiles(currentPath)
+      // Forcer le rafraîchissement pour voir la suppression immédiatement
+      setTimeout(() => {
+        loadFiles(currentPath, true) // forceRefresh = true
+      }, 300)
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erreur lors de la suppression')
     }
@@ -154,7 +159,10 @@ const FileManager: React.FC = () => {
       await axios.post(`/api/agents/${id}/files/dir`, {
         path: currentPath + name
       })
-      loadFiles(currentPath)
+      // Forcer le rafraîchissement pour voir le nouveau dossier immédiatement
+      setTimeout(() => {
+        loadFiles(currentPath, true) // forceRefresh = true
+      }, 300)
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erreur lors de la création du dossier')
     }
@@ -179,8 +187,9 @@ const FileManager: React.FC = () => {
       setUploadFile(null)
       setShowUpload(false)
       // Attendre un peu avant de rafraîchir pour s'assurer que le fichier est écrit
+      // et forcer le rafraîchissement pour contourner le cache
       setTimeout(() => {
-        loadFiles(currentPath)
+        loadFiles(currentPath, true) // forceRefresh = true
       }, 500)
     } catch (err: any) {
       console.error('Erreur upload:', err)

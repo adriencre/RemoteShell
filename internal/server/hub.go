@@ -422,6 +422,14 @@ func (a *Agent) GetFileCache(path string) ([]*common.FileData, bool) {
 	return files, exists
 }
 
+// ClearFileCache supprime le cache de fichiers pour un chemin
+func (a *Agent) ClearFileCache(path string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	delete(a.FileCache, path)
+}
+
 // UpdateServices met à jour les informations des services
 func (a *Agent) UpdateServices(services []*common.ServiceInfo) {
 	a.mu.Lock()
