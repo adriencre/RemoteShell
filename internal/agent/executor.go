@@ -176,49 +176,12 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 		fullCommand += " " + strings.Join(cmdData.Args, " ")
 	}
 
-	// Détecter les commandes cd pour mettre à jour le workingDir
-	// IMPORTANT: Le shell persistant DOIT conserver l'état entre les commandes
-	// Si cd est détecté, on l'exécute dans le shell persistant et on met à jour notre tracking
+	// Détecter les commandes cd
+	// IMPORTANT: Pour les commandes cd, on ne met PAS à jour workingDir ici
+	// On le fera APRÈS l'exécution en récupérant le répertoire réel avec pwd
 	isCdCommand := strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ")
 	if isCdCommand {
 		log.Printf("DEBUG: [Executor] Détection d'une commande cd: %s", fullCommand)
-		// Extraire le chemin du cd
-		cdParts := strings.Fields(strings.TrimSpace(fullCommand))
-		if len(cdParts) >= 2 {
-			newDir := cdParts[1]
-			log.Printf("DEBUG: [Executor] Nouveau répertoire extrait: %s", newDir)
-			// Gérer les cas spéciaux comme cd - ou cd ~
-			switch newDir {
-			case "-":
-				// cd - retourne au répertoire précédent, difficile à tracker
-				// Laisser le shell gérer ça - on ne met pas à jour workingDir
-				log.Printf("[Executor] cd - détecté, pas de mise à jour du workingDir")
-			case "~":
-				// cd ~ va au home directory
-				homeDir := os.Getenv("HOME")
-				if homeDir != "" {
-					e.workingDir = homeDir
-					log.Printf("[Executor] cd ~ détecté, workingDir mis à jour: %s", e.workingDir)
-				}
-			default:
-				// Mettre à jour le workingDir
-				// Si c'est un chemin absolu, on l'utilise tel quel
-				if strings.HasPrefix(newDir, "/") {
-					oldDir := e.workingDir
-					e.workingDir = newDir
-					log.Printf("DEBUG: [Executor] Chemin absolu détecté, workingDir mis à jour: %q -> %q", oldDir, e.workingDir)
-				} else {
-					// Chemin relatif - on doit résoudre le chemin absolu
-					// Exécuter pwd pour obtenir le répertoire actuel, puis résoudre le chemin relatif
-					// Pour l'instant, on garde le tracking approximatif
-					// Le shell gérera le chemin réel lors de l'exécution
-					e.workingDir = newDir
-					log.Printf("[Executor] Chemin relatif détecté, workingDir mis à jour: %s", e.workingDir)
-				}
-			}
-		} else {
-			log.Printf("[Executor] ERREUR: Impossible d'extraire le répertoire de la commande cd")
-		}
 	} else {
 		log.Printf("DEBUG: [Executor] Commande non-cd détectée: %s, workingDir actuel: %s", fullCommand, e.workingDir)
 	}
@@ -273,11 +236,29 @@ func (e *Executor) Execute(ctx context.Context, cmdData *common.CommandData) (*c
 	output, err := e.readOutput(marker, timeout)
 	duration := time.Since(start)
 
-	// Après l'exécution, si c'était un cd réussi, mettre à jour le workingDir réel
-	if strings.HasPrefix(strings.TrimSpace(fullCommand), "cd ") && err == nil {
-		// Essayer de récupérer le répertoire actuel avec pwd
-		// Pour l'instant, on fait confiance au cd qui a été exécuté
-		// Le workingDir a déjà été mis à jour avant
+	// Après l'exécution, si c'était un cd, récupérer le répertoire actuel avec pwd
+	if isCdCommand && err == nil {
+		log.Printf("DEBUG: [Executor] Commande cd exécutée, récupération du répertoire actuel...")
+		// Exécuter pwd pour obtenir le répertoire absolu réel
+		pwdMarker := fmt.Sprintf("__PWD_END_%d__", time.Now().UnixNano())
+		pwdCmd := fmt.Sprintf("pwd; echo '%s'\n", pwdMarker)
+		
+		if _, pwdErr := e.shellIn.Write([]byte(pwdCmd)); pwdErr == nil {
+			if pwdOutput, pwdErr := e.readOutput(pwdMarker, 5*time.Second); pwdErr == nil {
+				actualDir := strings.TrimSpace(pwdOutput)
+				if actualDir != "" && strings.HasPrefix(actualDir, "/") {
+					oldDir := e.workingDir
+					e.workingDir = actualDir
+					log.Printf("DEBUG: [Executor] workingDir mis à jour via pwd: %q -> %q", oldDir, e.workingDir)
+				} else {
+					log.Printf("DEBUG: [Executor] pwd a retourné un résultat invalide: %q", actualDir)
+				}
+			} else {
+				log.Printf("DEBUG: [Executor] Erreur lors de la lecture de pwd: %v", pwdErr)
+			}
+		} else {
+			log.Printf("DEBUG: [Executor] Erreur lors de l'envoi de pwd: %v", pwdErr)
+		}
 	}
 
 	// Analyser la sortie
