@@ -410,16 +410,35 @@ func (api *APIServer) updateAgentMetadata(c *gin.Context) {
 
 	// Sauvegarder dans la base de données
 	if api.db != nil {
-		agentRecord := &AgentRecord{
-			ID:        agent.ID,
-			Name:      agent.Name,
-			Franchise: metadata.Franchise,
-			Category:  metadata.Category,
-			LastSeen:  agent.LastSeen,
-			Status:    "online",
-			UpdatedAt: time.Now(),
+		// Charger l'agent existant depuis la base pour préserver les autres champs
+		existingRecord, err := api.db.GetAgent(agent.ID)
+		if err != nil {
+			// Si l'agent n'existe pas en base, créer un nouvel enregistrement
+			existingRecord = &AgentRecord{
+				ID:        agent.ID,
+				Name:      agent.Name,
+				LastSeen:  agent.LastSeen,
+				Status:    "online",
+				CreatedAt: time.Now(),
+			}
+			// Récupérer l'IP depuis la connexion si disponible
+			if agent.Conn != nil {
+				existingRecord.IPAddress = agent.Conn.RemoteAddr()
+			}
 		}
-		if err := api.db.SaveAgent(agentRecord); err != nil {
+		
+		// Mettre à jour uniquement les métadonnées et les champs nécessaires
+		existingRecord.Franchise = metadata.Franchise
+		existingRecord.Category = metadata.Category
+		existingRecord.Name = agent.Name
+		existingRecord.LastSeen = agent.LastSeen
+		if agent.Conn != nil {
+			existingRecord.IPAddress = agent.Conn.RemoteAddr()
+		}
+		existingRecord.Status = "online"
+		existingRecord.UpdatedAt = time.Now()
+		
+		if err := api.db.SaveAgent(existingRecord); err != nil {
 			log.Printf("Erreur lors de la sauvegarde des métadonnées de l'agent %s en base: %v", agent.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur lors de la sauvegarde en base de données"})
 			return
