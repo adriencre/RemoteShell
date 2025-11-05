@@ -22,7 +22,7 @@ interface Agent {
   name: string
   last_seen: string
   active: boolean
-  printers: any[]
+  printers: any[] | null
   system_info?: {
     hostname: string
     os: string
@@ -33,7 +33,7 @@ interface Agent {
     cpu_cores: number
     disk_total: number
     disk_used: number
-  }
+  } | null
 }
 
 const AgentDetail: React.FC = () => {
@@ -283,10 +283,10 @@ const AgentDetail: React.FC = () => {
       {/* Printers */}
       <div className="card">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Imprimantes ({agent.printers.length})</h2>
+          <h2 className="text-lg font-medium text-gray-900">Imprimantes ({agent.printers?.length || 0})</h2>
         </div>
         
-        {agent.printers.length === 0 ? (
+        {!agent.printers || agent.printers.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <Printer className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">Aucune imprimante</h3>
