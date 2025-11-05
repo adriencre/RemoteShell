@@ -207,17 +207,34 @@ trap "rm -rf $TMP_DIR" EXIT
 # Télécharger l'agent avec les paramètres OS/arch
 AGENT_URL="$DOWNLOAD_BASE/download/agent?os=$OS&arch=$ARCH"
 echo "🔗 Connexion à $AGENT_URL..."
+
+# Télécharger avec curl (afficher les erreurs HTTP)
 if command -v curl &> /dev/null; then
-    if ! curl -f -s -o "$TMP_DIR/rms-agent" "$AGENT_URL"; then
+    HTTP_CODE=$(curl -s -o "$TMP_DIR/rms-agent" -w "%{http_code}" "$AGENT_URL" || echo "000")
+    
+    # Vérifier le code HTTP
+    if [ "$HTTP_CODE" != "200" ]; then
         echo ""
         echo "❌ Erreur: Impossible de télécharger l'agent depuis $AGENT_URL"
+        echo "   Code HTTP: $HTTP_CODE"
+        
+        # Si c'est une erreur 404, essayer de récupérer le message d'erreur du serveur
+        if [ "$HTTP_CODE" = "404" ]; then
+            ERROR_MSG=$(cat "$TMP_DIR/rms-agent" 2>/dev/null | grep -o '"hint":"[^"]*"' | sed 's/"hint":"\([^"]*\)"/\1/' || echo "")
+            if [ -n "$ERROR_MSG" ]; then
+                echo "   Message du serveur: $ERROR_MSG"
+            fi
+        fi
+        
         echo ""
         echo "💡 Vérifications possibles:"
         echo "   1. Vérifiez que l'URL du serveur est correcte"
         echo "   2. Vérifiez la connectivité réseau: ping $(echo $SERVER_HOST_PORT | cut -d: -f1)"
         echo "   3. Vérifiez que le serveur est accessible: curl -I $DOWNLOAD_BASE/health"
         echo "   4. Vérifiez que le binaire pour $OS/$ARCH est disponible sur le serveur"
-        echo "   5. Essayez avec l'adresse IP directement au lieu du nom de domaine"
+        echo "   5. Si le binaire n'existe pas, le serveur doit builder les binaires multi-plateformes:"
+        echo "      ./scripts/build.sh ou make build-all"
+        echo "   6. Essayez avec l'adresse IP directement au lieu du nom de domaine"
         exit 1
     fi
 elif command -v wget &> /dev/null; then

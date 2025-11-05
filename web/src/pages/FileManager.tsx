@@ -164,21 +164,29 @@ const FileManager: React.FC = () => {
     if (!uploadFile) return
     
     setIsUploading(true)
+    setError('') // Réinitialiser l'erreur
     const formData = new FormData()
     formData.append('file', uploadFile)
     formData.append('path', currentPath + uploadFile.name)
     
     try {
-      await axios.post(`/api/agents/${id}/files/upload`, formData, {
+      const response = await axios.post(`/api/agents/${id}/files/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       })
+      console.log('Upload réussi:', response.data)
       setUploadFile(null)
       setShowUpload(false)
-      loadFiles(currentPath)
+      // Attendre un peu avant de rafraîchir pour s'assurer que le fichier est écrit
+      setTimeout(() => {
+        loadFiles(currentPath)
+      }, 500)
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Erreur lors de l\'upload')
+      console.error('Erreur upload:', err)
+      const errorMsg = err.response?.data?.error || err.message || 'Erreur lors de l\'upload'
+      setError(errorMsg)
+      // Ne pas masquer le formulaire d'upload en cas d'erreur
     } finally {
       setIsUploading(false)
     }

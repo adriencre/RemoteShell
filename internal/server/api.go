@@ -251,12 +251,31 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	if agentPath == "" {
 		log.Printf("[API] downloadAgent - Fichier non trouvé pour os=%s, arch=%s", osParam, archParam)
 		log.Printf("[API] downloadAgent - Chemins testés: %v", possiblePaths)
+		
+		// Vérifier quels binaires sont disponibles
+		availableBinaries := []string{}
+		buildDir := "./build"
+		if entries, err := os.ReadDir(buildDir); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && (strings.HasPrefix(entry.Name(), "agent-") || entry.Name() == "rms-agent") {
+					availableBinaries = append(availableBinaries, entry.Name())
+				}
+			}
+		}
+		
+		errorMsg := fmt.Sprintf("Le binaire agent-%s-%s%s n'est pas disponible.", osParam, archParam, ext)
+		if len(availableBinaries) > 0 {
+			errorMsg += fmt.Sprintf(" Binaires disponibles: %v.", availableBinaries)
+		}
+		errorMsg += " Pour générer les binaires multi-plateformes, exécutez: ./scripts/build.sh ou make build-all"
+		
 		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "fichier agent non trouvé",
-			"os":      osParam,
-			"arch":    archParam,
-			"expected": expectedFileName,
-			"hint":    fmt.Sprintf("Le binaire agent-%s-%s%s n'est pas disponible. Assurez-vous que le build a été effectué pour cette plateforme.", osParam, archParam, ext),
+			"error":     "fichier agent non trouvé",
+			"os":        osParam,
+			"arch":      archParam,
+			"expected":  expectedFileName,
+			"available": availableBinaries,
+			"hint":      errorMsg,
 		})
 		return
 	}
@@ -773,16 +792,20 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 	msg := common.NewMessage(common.MessageTypeFileUpload, chunks)
 	msg.AgentID = agentID
 
+	log.Printf("[API] uploadFile - Envoi de %d chunks à l'agent %s, ID message: %s", len(chunks), agentID, msg.ID)
+
 	// Attendre la réponse de l'agent (timeout de 30 secondes)
 	response, err := agent.SendMessageWithResponse(msg, 30*time.Second)
 	if err != nil {
-		log.Printf("Erreur lors de l'upload du fichier: %v", err)
+		log.Printf("[API] uploadFile - Erreur lors de l'upload du fichier: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi du fichier ou timeout"})
 		return
 	}
 
+	log.Printf("[API] uploadFile - Réponse reçue de l'agent, Type: %s, ID: %s", response.Type, response.ID)
+
 	// Vérifier si l'agent a renvoyé une erreur
-	if response.Type == common.MessageTypeFileError {
+	if response.Type == common.MessageTypeFileError || response.Type == common.MessageTypeError {
 		var errorData *common.ErrorData
 		if errData, ok := response.Data.(*common.ErrorData); ok {
 			errorData = errData
@@ -805,9 +828,16 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 
 	// Vérifier que c'est bien une confirmation de complétion
 	if response.Type != common.MessageTypeFileComplete {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "réponse inattendue de l'agent"})
+		log.Printf("[API] uploadFile - Réponse inattendue: Type=%s (attendu: %s), ID=%s", response.Type, common.MessageTypeFileComplete, response.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "réponse inattendue de l'agent",
+			"response_type": string(response.Type),
+			"expected_type": string(common.MessageTypeFileComplete),
+		})
 		return
 	}
+
+	log.Printf("[API] uploadFile - Confirmation reçue, upload réussi pour %s", path)
 
 	// Enregistrer l'opération dans les logs
 	if api.db != nil {

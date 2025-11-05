@@ -90,6 +90,16 @@ build_web() {
     log "Build de production React..."
     npm run build
     
+    # Vérifier que le répertoire dist existe et contient des fichiers
+    if [ ! -d "dist" ] || [ -z "$(ls -A dist 2>/dev/null)" ]; then
+        error "Le build web a échoué : le répertoire dist est vide ou n'existe pas"
+        cd ..
+        exit 1
+    fi
+    
+    # Créer le répertoire de destination s'il n'existe pas
+    mkdir -p ../$BUILD_DIR/web
+    
     # Copier les fichiers buildés
     cp -r dist/* ../$BUILD_DIR/web/
     
