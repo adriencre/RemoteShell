@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -312,6 +313,10 @@ func (c *Client) processMessage(msg *common.Message) error {
 		return c.handleFileDownload(msg)
 	case common.MessageTypeFileList:
 		return c.handleFileList(msg)
+	case common.MessageTypeFileDelete:
+		return c.handleFileDelete(msg)
+	case common.MessageTypeFileCreateDir:
+		return c.handleFileCreateDir(msg)
 	case common.MessageTypeServiceList:
 		return c.handleServiceList(msg)
 	case common.MessageTypeServiceStatus:
@@ -410,13 +415,64 @@ func (c *Client) handleCommand(msg *common.Message) error {
 
 // handleFileUpload traite l'upload de fichier
 func (c *Client) handleFileUpload(msg *common.Message) error {
-	chunks, ok := msg.Data.([]*common.FileChunk)
-	if !ok {
-		return fmt.Errorf("données de chunks invalides")
+	var chunks []*common.FileChunk
+	var chunksOk bool
+
+	// Gérer les différents types de données (après sérialisation JSON)
+	if chunksData, ok := msg.Data.([]*common.FileChunk); ok {
+		chunks = chunksData
+		chunksOk = true
+	} else if chunksInterface, ok := msg.Data.([]interface{}); ok {
+		// Convertir []interface{} en []*common.FileChunk
+		chunks = make([]*common.FileChunk, 0, len(chunksInterface))
+		for _, item := range chunksInterface {
+			if chunkMap, ok := item.(map[string]interface{}); ok {
+				chunk := &common.FileChunk{}
+				if pathVal, exists := chunkMap["path"]; exists {
+					if pathStr, ok := pathVal.(string); ok {
+						chunk.Path = pathStr
+					}
+				}
+				if offsetVal, exists := chunkMap["offset"]; exists {
+					if offsetFloat, ok := offsetVal.(float64); ok {
+						chunk.Offset = int64(offsetFloat)
+					}
+				}
+				if dataVal, exists := chunkMap["data"]; exists {
+					// Les données binaires sont encodées en base64 dans JSON
+					if dataStr, ok := dataVal.(string); ok {
+						decoded, err := base64.StdEncoding.DecodeString(dataStr)
+						if err != nil {
+							return fmt.Errorf("erreur de décodage base64: %v", err)
+						}
+						chunk.Data = decoded
+					} else if dataBytes, ok := dataVal.([]byte); ok {
+						chunk.Data = dataBytes
+					}
+				}
+				if isLastVal, exists := chunkMap["is_last"]; exists {
+					if isLastBool, ok := isLastVal.(bool); ok {
+						chunk.IsLast = isLastBool
+					}
+				}
+				if checksumVal, exists := chunkMap["checksum"]; exists {
+					if checksumStr, ok := checksumVal.(string); ok {
+						chunk.Checksum = checksumStr
+					}
+				}
+				chunks = append(chunks, chunk)
+			}
+		}
+		chunksOk = true
 	}
 
-	if len(chunks) == 0 {
-		return fmt.Errorf("aucun chunk reçu")
+	if !chunksOk || len(chunks) == 0 {
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "INVALID_DATA",
+			Message: "données de chunks invalides",
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
 	}
 
 	// Utiliser le chemin du premier chunk
@@ -590,6 +646,110 @@ listFiles:
 	
 	log.Printf("[AGENT] handleFileList - Réponse envoyée avec succès")
 	return nil
+}
+
+// handleFileDelete traite la suppression de fichier
+func (c *Client) handleFileDelete(msg *common.Message) error {
+	var path string
+
+	// Gérer les différents types de données
+	switch data := msg.Data.(type) {
+	case *common.FileData:
+		path = data.Path
+	case map[string]interface{}:
+		if pathValue, exists := data["path"]; exists {
+			if pathStr, ok := pathValue.(string); ok {
+				path = pathStr
+			}
+		}
+	case string:
+		path = data
+	default:
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "INVALID_DATA",
+			Message: fmt.Sprintf("format de données invalide: %T", msg.Data),
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	if path == "" {
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "MISSING_PATH",
+			Message: "chemin de fichier manquant",
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	// Supprimer le fichier
+	if err := c.fileManager.DeleteFile(path); err != nil {
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "DELETE_ERROR",
+			Message: err.Error(),
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	// Confirmer la suppression
+	completeMsg := common.NewMessageWithID(common.MessageTypeFileComplete, msg.ID, &common.FileData{
+		Path: path,
+	})
+	completeMsg.AgentID = c.agentID
+	return c.sendMessage(completeMsg)
+}
+
+// handleFileCreateDir traite la création de répertoire
+func (c *Client) handleFileCreateDir(msg *common.Message) error {
+	var path string
+
+	// Gérer les différents types de données
+	switch data := msg.Data.(type) {
+	case *common.FileData:
+		path = data.Path
+	case map[string]interface{}:
+		if pathValue, exists := data["path"]; exists {
+			if pathStr, ok := pathValue.(string); ok {
+				path = pathStr
+			}
+		}
+	case string:
+		path = data
+	default:
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "INVALID_DATA",
+			Message: fmt.Sprintf("format de données invalide: %T", msg.Data),
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	if path == "" {
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "MISSING_PATH",
+			Message: "chemin de répertoire manquant",
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	// Créer le répertoire
+	if err := c.fileManager.CreateDirectory(path); err != nil {
+		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+			Code:    "CREATE_DIR_ERROR",
+			Message: err.Error(),
+		})
+		errorMsg.AgentID = c.agentID
+		return c.sendMessage(errorMsg)
+	}
+
+	// Confirmer la création
+	completeMsg := common.NewMessageWithID(common.MessageTypeFileComplete, msg.ID, &common.FileData{
+		Path: path,
+	})
+	completeMsg.AgentID = c.agentID
+	return c.sendMessage(completeMsg)
 }
 
 // sendMessage envoie un message via WebSocket

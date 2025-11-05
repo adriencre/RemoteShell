@@ -192,8 +192,47 @@ func (api *APIServer) getDatabaseInfo(c *gin.Context) {
 
 // downloadAgent sert le fichier binaire de l'agent pour téléchargement
 func (api *APIServer) downloadAgent(c *gin.Context) {
+	// Récupérer les paramètres OS et architecture depuis la requête
+	osParam := c.Query("os")
+	archParam := c.Query("arch")
+
+	// Si les paramètres ne sont pas fournis, essayer de détecter depuis User-Agent
+	if osParam == "" || archParam == "" {
+		userAgent := c.GetHeader("User-Agent")
+		log.Printf("[API] downloadAgent - Paramètres OS/arch manquants, User-Agent: %s", userAgent)
+		// Fallback: utiliser linux/amd64 par défaut
+		if osParam == "" {
+			osParam = "linux"
+		}
+		if archParam == "" {
+			archParam = "amd64"
+		}
+		log.Printf("[API] downloadAgent - Utilisation des valeurs par défaut: os=%s, arch=%s", osParam, archParam)
+	}
+
+	// Normaliser les valeurs
+	osParam = strings.ToLower(osParam)
+	archParam = strings.ToLower(archParam)
+
+	// Déterminer l'extension du fichier
+	ext := ""
+	if osParam == "windows" {
+		ext = ".exe"
+	}
+
+	// Construire le nom du fichier attendu
+	expectedFileName := fmt.Sprintf("agent-%s-%s%s", osParam, archParam, ext)
+
 	// Chercher le fichier dans plusieurs emplacements possibles
 	possiblePaths := []string{
+		fmt.Sprintf("./build/%s", expectedFileName),
+		fmt.Sprintf("./build/web/%s", expectedFileName),
+		fmt.Sprintf("./%s", expectedFileName),
+		fmt.Sprintf("./web/public/%s", expectedFileName),
+		// Fallback: chercher sans préfixe "agent-"
+		fmt.Sprintf("./build/rms-agent-%s-%s%s", osParam, archParam, ext),
+		fmt.Sprintf("./build/web/rms-agent-%s-%s%s", osParam, archParam, ext),
+		// Fallback: ancien format (pour compatibilité)
 		"./build/rms-agent",
 		"./build/web/rms-agent",
 		"./rms-agent",
@@ -204,19 +243,35 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			agentPath = path
+			log.Printf("[API] downloadAgent - Fichier trouvé: %s", agentPath)
 			break
 		}
 	}
 
 	if agentPath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "fichier agent non trouvé"})
+		log.Printf("[API] downloadAgent - Fichier non trouvé pour os=%s, arch=%s", osParam, archParam)
+		log.Printf("[API] downloadAgent - Chemins testés: %v", possiblePaths)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "fichier agent non trouvé",
+			"os":      osParam,
+			"arch":    archParam,
+			"expected": expectedFileName,
+			"hint":    fmt.Sprintf("Le binaire agent-%s-%s%s n'est pas disponible. Assurez-vous que le build a été effectué pour cette plateforme.", osParam, archParam, ext),
+		})
 		return
 	}
 
+	// Déterminer le nom du fichier pour le téléchargement
+	downloadFileName := "rms-agent"
+	if osParam == "windows" {
+		downloadFileName = "rms-agent.exe"
+	}
+
 	// Définir les en-têtes pour forcer le téléchargement
-	// Le nom du fichier sera celui du fichier source
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "rms-agent"))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", downloadFileName))
 	c.Header("Content-Type", "application/octet-stream")
+	
+	log.Printf("[API] downloadAgent - Servir le fichier: %s (os=%s, arch=%s)", agentPath, osParam, archParam)
 	
 	// Servir le fichier
 	c.File(agentPath)
@@ -304,6 +359,7 @@ func (api *APIServer) login(c *gin.Context) {
 }
 
 // getAgents retourne la liste des agents (filtrée selon l'utilisateur)
+// Inclut tous les agents (actifs et inactifs) depuis la base de données
 func (api *APIServer) getAgents(c *gin.Context) {
 	// Récupérer l'utilisateur depuis les claims
 	claims, exists := auth.GetClaimsFromContext(c)
@@ -319,40 +375,74 @@ func (api *APIServer) getAgents(c *gin.Context) {
 		userID = claims.AgentID
 	}
 
-	allAgents := api.hub.GetAgents()
-	var agentList []gin.H
+	// Récupérer les agents connectés (actifs)
+	connectedAgents := api.hub.GetAgents()
+	connectedMap := make(map[string]*Agent)
+	for _, agent := range connectedAgents {
+		connectedMap[agent.ID] = agent
+	}
 
-	// Si l'utilisateur est admin, voir tous les agents
-	if claims.Role == "admin" {
-		for _, agent := range allAgents {
-			metadata := api.hub.GetAgentMetadata(agent.ID)
-			agentList = append(agentList, gin.H{
-				"id":          agent.ID,
-				"name":        agent.Name,
-				"last_seen":   agent.LastSeen,
-				"active":      agent.IsActive(),
-				"printers":    len(agent.GetPrinters()),
-				"system_info": agent.GetSystemInfo(),
+	// Récupérer tous les agents depuis la base de données (actifs et inactifs)
+	var allAgentRecords []*AgentRecord
+	if api.db != nil {
+		allAgentRecordsFromDB, err := api.db.GetAgents()
+		if err != nil {
+			log.Printf("Erreur lors de la récupération des agents depuis la base de données: %v", err)
+			// Continuer avec seulement les agents connectés en cas d'erreur
+			allAgentRecords = []*AgentRecord{}
+		} else {
+			allAgentRecords = allAgentRecordsFromDB
+		}
+	}
+
+	// Créer une map pour éviter les doublons (agents de la DB qui sont aussi connectés)
+	agentMap := make(map[string]gin.H)
+
+	// Traiter d'abord les agents connectés (actifs)
+	for _, agent := range connectedAgents {
+		metadata := api.hub.GetAgentMetadata(agent.ID)
+		agentMap[agent.ID] = gin.H{
+			"id":          agent.ID,
+			"name":        agent.Name,
+			"last_seen":   agent.LastSeen,
+			"active":      true,
+			"printers":    len(agent.GetPrinters()),
+			"system_info": agent.GetSystemInfo(),
+			"franchise":   metadata.Franchise,
+			"category":    metadata.Category,
+		}
+	}
+
+	// Ajouter les agents de la base de données qui ne sont pas connectés (inactifs)
+	for _, agentRecord := range allAgentRecords {
+		if _, alreadyAdded := agentMap[agentRecord.ID]; !alreadyAdded {
+			// Agent uniquement en base de données, pas connecté
+			// Pour les agents inactifs, utiliser les métadonnées depuis la DB ou le hub
+			metadata := api.hub.GetAgentMetadata(agentRecord.ID)
+			// Si pas de métadonnées dans le hub, utiliser celles de la DB
+			if metadata.Franchise == "" {
+				metadata = &AgentMetadata{
+					Franchise: agentRecord.Franchise,
+					Category:  agentRecord.Category,
+				}
+			}
+			agentMap[agentRecord.ID] = gin.H{
+				"id":          agentRecord.ID,
+				"name":        agentRecord.Name,
+				"last_seen":   agentRecord.LastSeen,
+				"active":      false,
+				"printers":    0, // Pas d'info sur les imprimantes pour les agents inactifs
+				"system_info": nil,
 				"franchise":   metadata.Franchise,
 				"category":    metadata.Category,
-			})
+			}
 		}
-	} else {
-		// Sinon, filtrer selon l'utilisateur (agents qui n'ont pas de UserID ou qui appartiennent à cet utilisateur)
-		// Pour l'instant, on montre tous les agents (peut être modifié selon les besoins)
-		for _, agent := range allAgents {
-			metadata := api.hub.GetAgentMetadata(agent.ID)
-			agentList = append(agentList, gin.H{
-				"id":          agent.ID,
-				"name":        agent.Name,
-				"last_seen":   agent.LastSeen,
-				"active":      agent.IsActive(),
-				"printers":    len(agent.GetPrinters()),
-				"system_info": agent.GetSystemInfo(),
-				"franchise":   metadata.Franchise,
-				"category":    metadata.Category,
-			})
-		}
+	}
+
+	// Convertir la map en liste
+	var agentList []gin.H
+	for _, agentData := range agentMap {
+		agentList = append(agentList, agentData)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -679,13 +769,59 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 		}
 	}
 
-	// Envoyer les chunks à l'agent
+	// Envoyer les chunks à l'agent et attendre la confirmation
 	msg := common.NewMessage(common.MessageTypeFileUpload, chunks)
 	msg.AgentID = agentID
 
-	if err := agent.SendMessage(msg); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi du fichier"})
+	// Attendre la réponse de l'agent (timeout de 30 secondes)
+	response, err := agent.SendMessageWithResponse(msg, 30*time.Second)
+	if err != nil {
+		log.Printf("Erreur lors de l'upload du fichier: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi du fichier ou timeout"})
 		return
+	}
+
+	// Vérifier si l'agent a renvoyé une erreur
+	if response.Type == common.MessageTypeFileError {
+		var errorData *common.ErrorData
+		if errData, ok := response.Data.(*common.ErrorData); ok {
+			errorData = errData
+		} else if errMap, ok := response.Data.(map[string]interface{}); ok {
+			errorData = &common.ErrorData{}
+			if msg, ok := errMap["message"].(string); ok {
+				errorData.Message = msg
+			}
+			if code, ok := errMap["code"].(string); ok {
+				errorData.Code = code
+			}
+		}
+		errorMsg := "erreur lors de l'upload du fichier"
+		if errorData != nil && errorData.Message != "" {
+			errorMsg = errorData.Message
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
+		return
+	}
+
+	// Vérifier que c'est bien une confirmation de complétion
+	if response.Type != common.MessageTypeFileComplete {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "réponse inattendue de l'agent"})
+		return
+	}
+
+	// Enregistrer l'opération dans les logs
+	if api.db != nil {
+		fileLog := &FileLog{
+			AgentID:   agentID,
+			Operation: "upload",
+			Path:      path,
+			Size:      file.Size,
+			Success:   true,
+			CreatedAt: time.Now(),
+		}
+		if err := api.db.LogFile(fileLog); err != nil {
+			log.Printf("Erreur lors de l'enregistrement du log d'upload: %v", err)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -747,14 +883,68 @@ func (api *APIServer) deleteFile(c *gin.Context) {
 	msg := common.NewMessage(common.MessageTypeFileDelete, fileData)
 	msg.AgentID = agentID
 
-	// Envoyer la demande à l'agent
-	if err := agent.SendMessage(msg); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi de la demande"})
+	// Envoyer la demande à l'agent et attendre la confirmation
+	response, err := agent.SendMessageWithResponse(msg, 10*time.Second)
+	if err != nil {
+		log.Printf("Erreur lors de la suppression du fichier: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi de la demande ou timeout"})
 		return
 	}
 
+	// Vérifier si l'agent a renvoyé une erreur
+	if response.Type == common.MessageTypeFileError || response.Type == common.MessageTypeError {
+		var errorData *common.ErrorData
+		if errData, ok := response.Data.(*common.ErrorData); ok {
+			errorData = errData
+		} else if errMap, ok := response.Data.(map[string]interface{}); ok {
+			errorData = &common.ErrorData{}
+			if msg, ok := errMap["message"].(string); ok {
+				errorData.Message = msg
+			}
+			if code, ok := errMap["code"].(string); ok {
+				errorData.Code = code
+			}
+		}
+		errorMsg := "erreur lors de la suppression du fichier"
+		if errorData != nil && errorData.Message != "" {
+			errorMsg = errorData.Message
+		}
+		
+		// Enregistrer l'erreur dans les logs
+		if api.db != nil {
+			fileLog := &FileLog{
+				AgentID:   agentID,
+				Operation: "delete",
+				Path:      path,
+				Success:   false,
+				Error:     errorMsg,
+				CreatedAt: time.Now(),
+			}
+			if err := api.db.LogFile(fileLog); err != nil {
+				log.Printf("Erreur lors de l'enregistrement du log de suppression: %v", err)
+			}
+		}
+		
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
+		return
+	}
+
+	// Enregistrer l'opération réussie dans les logs
+	if api.db != nil {
+		fileLog := &FileLog{
+			AgentID:   agentID,
+			Operation: "delete",
+			Path:      path,
+			Success:   true,
+			CreatedAt: time.Now(),
+		}
+		if err := api.db.LogFile(fileLog); err != nil {
+			log.Printf("Erreur lors de l'enregistrement du log de suppression: %v", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "demande de suppression envoyée",
+		"message": "fichier supprimé",
 		"path":    path,
 	})
 }
@@ -782,14 +972,68 @@ func (api *APIServer) createDirectory(c *gin.Context) {
 	msg := common.NewMessage(common.MessageTypeFileCreateDir, fileData)
 	msg.AgentID = agentID
 
-	// Envoyer la demande à l'agent
-	if err := agent.SendMessage(msg); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi de la demande"})
+	// Envoyer la demande à l'agent et attendre la confirmation
+	response, err := agent.SendMessageWithResponse(msg, 10*time.Second)
+	if err != nil {
+		log.Printf("Erreur lors de la création du répertoire: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi de la demande ou timeout"})
 		return
 	}
 
+	// Vérifier si l'agent a renvoyé une erreur
+	if response.Type == common.MessageTypeFileError || response.Type == common.MessageTypeError {
+		var errorData *common.ErrorData
+		if errData, ok := response.Data.(*common.ErrorData); ok {
+			errorData = errData
+		} else if errMap, ok := response.Data.(map[string]interface{}); ok {
+			errorData = &common.ErrorData{}
+			if msg, ok := errMap["message"].(string); ok {
+				errorData.Message = msg
+			}
+			if code, ok := errMap["code"].(string); ok {
+				errorData.Code = code
+			}
+		}
+		errorMsg := "erreur lors de la création du répertoire"
+		if errorData != nil && errorData.Message != "" {
+			errorMsg = errorData.Message
+		}
+		
+		// Enregistrer l'erreur dans les logs
+		if api.db != nil {
+			fileLog := &FileLog{
+				AgentID:   agentID,
+				Operation: "create_dir",
+				Path:      req.Path,
+				Success:   false,
+				Error:     errorMsg,
+				CreatedAt: time.Now(),
+			}
+			if err := api.db.LogFile(fileLog); err != nil {
+				log.Printf("Erreur lors de l'enregistrement du log de création de répertoire: %v", err)
+			}
+		}
+		
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
+		return
+	}
+
+	// Enregistrer l'opération réussie dans les logs
+	if api.db != nil {
+		fileLog := &FileLog{
+			AgentID:   agentID,
+			Operation: "create_dir",
+			Path:      req.Path,
+			Success:   true,
+			CreatedAt: time.Now(),
+		}
+		if err := api.db.LogFile(fileLog); err != nil {
+			log.Printf("Erreur lors de l'enregistrement du log de création de répertoire: %v", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "demande de création de répertoire envoyée",
+		"message": "répertoire créé",
 		"path":    req.Path,
 	})
 }

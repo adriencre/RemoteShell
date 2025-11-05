@@ -131,31 +131,87 @@ else
     fi
 fi
 
-echo "📥 Téléchargement de l'agent depuis $DOWNLOAD_BASE/download/agent..."
+# Détecter l'OS et l'architecture
+echo "🔍 Détection de l'OS et de l'architecture..."
+OS=""
+ARCH=""
+EXT=""
+
+# Détecter l'OS
+case "$(uname -s)" in
+    Linux*)
+        OS="linux"
+        ;;
+    Darwin*)
+        OS="darwin"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        OS="windows"
+        EXT=".exe"
+        ;;
+    *)
+        echo "❌ Erreur: OS non supporté: $(uname -s)"
+        echo "   OS supportés: Linux, macOS (Darwin), Windows"
+        exit 1
+        ;;
+esac
+
+# Détecter l'architecture
+case "$(uname -m)" in
+    x86_64|amd64)
+        ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH="arm64"
+        ;;
+    armv7l|armv6l)
+        ARCH="arm"
+        ;;
+    *)
+        echo "⚠️  Architecture non reconnue: $(uname -m), tentative avec amd64..."
+        ARCH="amd64"
+        ;;
+esac
+
+echo "✅ OS détecté: $OS"
+echo "✅ Architecture détectée: $ARCH"
+echo ""
+
+# Vérifier si l'OS est Windows (nécessite un script PowerShell)
+if [ "$OS" = "windows" ]; then
+    echo "❌ Erreur: Ce script est pour Linux/macOS."
+    echo "   Pour Windows, utilisez le script PowerShell d'installation."
+    echo "   Téléchargez-le depuis: $DOWNLOAD_BASE/download/install-agent.ps1"
+    exit 1
+fi
+
+echo "📥 Téléchargement de l'agent depuis $DOWNLOAD_BASE/download/agent?os=$OS&arch=$ARCH..."
 echo ""
 
 # Créer un répertoire temporaire
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
-# Télécharger l'agent
-echo "🔗 Connexion à $DOWNLOAD_BASE/download/agent..."
+# Télécharger l'agent avec les paramètres OS/arch
+AGENT_URL="$DOWNLOAD_BASE/download/agent?os=$OS&arch=$ARCH"
+echo "🔗 Connexion à $AGENT_URL..."
 if command -v curl &> /dev/null; then
-    if ! curl -f -s -o "$TMP_DIR/rms-agent" "$DOWNLOAD_BASE/download/agent"; then
+    if ! curl -f -s -o "$TMP_DIR/rms-agent" "$AGENT_URL"; then
         echo ""
-        echo "❌ Erreur: Impossible de télécharger l'agent depuis $DOWNLOAD_BASE/download/agent"
+        echo "❌ Erreur: Impossible de télécharger l'agent depuis $AGENT_URL"
         echo ""
         echo "💡 Vérifications possibles:"
         echo "   1. Vérifiez que l'URL du serveur est correcte"
         echo "   2. Vérifiez la connectivité réseau: ping $(echo $SERVER_HOST_PORT | cut -d: -f1)"
         echo "   3. Vérifiez que le serveur est accessible: curl -I $DOWNLOAD_BASE/health"
-        echo "   4. Essayez avec l'adresse IP directement au lieu du nom de domaine"
+        echo "   4. Vérifiez que le binaire pour $OS/$ARCH est disponible sur le serveur"
+        echo "   5. Essayez avec l'adresse IP directement au lieu du nom de domaine"
         exit 1
     fi
 elif command -v wget &> /dev/null; then
-    if ! wget -q -O "$TMP_DIR/rms-agent" "$DOWNLOAD_BASE/download/agent"; then
+    if ! wget -q -O "$TMP_DIR/rms-agent" "$AGENT_URL"; then
         echo ""
-        echo "❌ Erreur: Impossible de télécharger l'agent depuis $DOWNLOAD_BASE/download/agent"
+        echo "❌ Erreur: Impossible de télécharger l'agent depuis $AGENT_URL"
         echo ""
         echo "💡 Vérifications possibles:"
         echo "   1. Vérifiez que l'URL du serveur est correcte"

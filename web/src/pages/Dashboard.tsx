@@ -158,6 +158,11 @@ const Dashboard: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">
                 {agents.filter(a => !a.active).length}
               </p>
+              {agents.filter(a => !a.active).length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {agents.filter(a => !a.active).length} agent{agents.filter(a => !a.active).length > 1 ? 's' : ''} inactif{agents.filter(a => !a.active).length > 1 ? 's' : ''}
+                </p>
+              )}
             </div>
           </div>
         </div>

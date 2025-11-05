@@ -157,6 +157,12 @@ func (ws *WebSocketServer) handleMessage(conn WebSocketConn, msg *common.Message
 	case common.MessageTypeFileList:
 		return ws.handleFileList(conn, msg, agent)
 
+	case common.MessageTypeFileDelete:
+		return ws.handleFileDelete(conn, msg, agent)
+
+	case common.MessageTypeFileCreateDir:
+		return ws.handleFileCreateDir(conn, msg, agent)
+
 	case common.MessageTypePrinterStatus:
 		return ws.handlePrinterStatus(conn, msg, agent)
 
@@ -352,6 +358,28 @@ func (ws *WebSocketServer) handleFileUpload(conn WebSocketConn, msg *common.Mess
 
 // handleFileDownload traite le téléchargement de fichier
 func (ws *WebSocketServer) handleFileDownload(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		return ws.sendError(conn, "non authentifié")
+	}
+
+	// Transférer le message à l'agent
+	(*agent).UpdateLastSeen()
+	return (*agent).SendMessage(msg)
+}
+
+// handleFileDelete traite la suppression de fichier
+func (ws *WebSocketServer) handleFileDelete(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		return ws.sendError(conn, "non authentifié")
+	}
+
+	// Transférer le message à l'agent
+	(*agent).UpdateLastSeen()
+	return (*agent).SendMessage(msg)
+}
+
+// handleFileCreateDir traite la création de répertoire
+func (ws *WebSocketServer) handleFileCreateDir(conn WebSocketConn, msg *common.Message, agent **Agent) error {
 	if *agent == nil {
 		return ws.sendError(conn, "non authentifié")
 	}
