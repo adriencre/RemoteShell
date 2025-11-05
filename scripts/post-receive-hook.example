@@ -1,0 +1,17 @@
+#!/bin/bash
+# Hook Git post-receive pour déploiement automatique
+# À placer dans: /path/to/repo.git/hooks/post-receive
+# Ou utiliser avec un webhook GitHub/GitLab
+
+# Répertoire où le code est déployé
+DEPLOY_DIR="/path/to/remoteshell"
+
+# Aller dans le répertoire de déploiement
+cd "$DEPLOY_DIR" || exit 1
+
+# Exécuter le script de déploiement
+./scripts/deploy-server.sh
+
+# Logger le déploiement
+echo "$(date): Déploiement terminé" >> /var/log/remoteshell-deploy.log
+

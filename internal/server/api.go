@@ -223,16 +223,28 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	// Construire le nom du fichier attendu
 	expectedFileName := fmt.Sprintf("agent-%s-%s%s", osParam, archParam, ext)
 
+	// Obtenir le répertoire de travail actuel
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = "."
+	}
+	log.Printf("[API] downloadAgent - Répertoire de travail: %s", workDir)
+
 	// Chercher le fichier dans plusieurs emplacements possibles
 	// PRIORITÉ: Chercher d'abord le binaire spécifique à l'OS/arch demandé
 	possiblePaths := []string{
+		// Chemins relatifs au répertoire de travail
 		fmt.Sprintf("./build/%s", expectedFileName),
 		fmt.Sprintf("./build/web/%s", expectedFileName),
 		fmt.Sprintf("./%s", expectedFileName),
 		fmt.Sprintf("./web/public/%s", expectedFileName),
+		// Chemins absolus basés sur le répertoire de travail
+		fmt.Sprintf("%s/build/%s", workDir, expectedFileName),
+		fmt.Sprintf("%s/build/web/%s", workDir, expectedFileName),
 		// Fallback: chercher sans préfixe "agent-"
 		fmt.Sprintf("./build/rms-agent-%s-%s%s", osParam, archParam, ext),
 		fmt.Sprintf("./build/web/rms-agent-%s-%s%s", osParam, archParam, ext),
+		fmt.Sprintf("%s/build/rms-agent-%s-%s%s", workDir, osParam, archParam, ext),
 	}
 	
 	// NE PAS inclure les fallbacks génériques (rms-agent sans suffixe) car ils peuvent
@@ -253,11 +265,18 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 		
 		// Vérifier quels binaires sont disponibles
 		availableBinaries := []string{}
-		buildDir := "./build"
-		if entries, err := os.ReadDir(buildDir); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() && (strings.HasPrefix(entry.Name(), "agent-") || entry.Name() == "rms-agent") {
-					availableBinaries = append(availableBinaries, entry.Name())
+		// Chercher dans plusieurs emplacements possibles
+		buildDirs := []string{"./build", fmt.Sprintf("%s/build", workDir)}
+		for _, buildDir := range buildDirs {
+			if entries, err := os.ReadDir(buildDir); err == nil {
+				for _, entry := range entries {
+					if !entry.IsDir() && (strings.HasPrefix(entry.Name(), "agent-") || entry.Name() == "rms-agent") {
+						availableBinaries = append(availableBinaries, entry.Name())
+					}
+				}
+				// Si on a trouvé des binaires, arrêter la recherche
+				if len(availableBinaries) > 0 {
+					break
 				}
 			}
 		}

@@ -18,9 +18,17 @@
 go.work
 
 # Build directories
-build/
+# Note: build/ est commenté pour permettre de versionner les binaires multi-plateformes
+# Si vous avez des problèmes de taille de repo, utilisez Git LFS pour les binaires
+# build/
 dist/
 bin/
+
+# Ignorer certains fichiers dans build/ mais garder les binaires
+build/*.log
+build/*.tmp
+build/tmp/
+build/temp/
 
 # Database files
 *.db
