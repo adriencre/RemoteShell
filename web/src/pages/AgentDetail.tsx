@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import axios from 'axios'
 import { 
@@ -42,28 +42,44 @@ const AgentDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const fetchAgent = async () => {
-    if (!id) return
+  // Debug: afficher l'ID récupéré
+  React.useEffect(() => {
+    console.log('AgentDetail: ID récupéré depuis useParams:', id)
+  }, [id])
+
+  const fetchAgent = useCallback(async () => {
+    if (!id) {
+      console.log('AgentDetail: Pas d\'ID dans les paramètres')
+      setIsLoading(false)
+      return
+    }
+    
+    console.log('AgentDetail: Récupération de l\'agent avec l\'ID:', id)
+    setIsLoading(true)
     
     try {
       const response = await axios.get(`/api/agents/${id}`)
+      console.log('AgentDetail: Données reçues:', response.data)
       setAgent(response.data)
       setError('')
-    } catch (err) {
-      setError('Erreur lors du chargement des détails de l\'agent')
-      console.error('Erreur:', err)
+    } catch (err: any) {
+      console.error('AgentDetail: Erreur lors de la récupération:', err)
+      const errorMessage = err.response?.data?.error || err.message || 'Erreur lors du chargement des détails de l\'agent'
+      setError(errorMessage)
+      setAgent(null)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [id])
 
   useEffect(() => {
+    console.log('AgentDetail: useEffect déclenché avec l\'ID:', id)
     fetchAgent()
     
     // Actualiser toutes les 30 secondes
     const interval = setInterval(fetchAgent, 30000)
     return () => clearInterval(interval)
-  }, [id])
+  }, [id, fetchAgent])
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400)
@@ -92,8 +108,16 @@ const AgentDetail: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Chargement...</h1>
+            <p className="text-gray-600">ID: {id || 'Non défini'}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
       </div>
     )
   }
