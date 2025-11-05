@@ -163,6 +163,12 @@ func (ws *WebSocketServer) handleMessage(conn WebSocketConn, msg *common.Message
 	case common.MessageTypeFileCreateDir:
 		return ws.handleFileCreateDir(conn, msg, agent)
 
+	case common.MessageTypeFileComplete:
+		return ws.handleFileComplete(conn, msg, agent)
+
+	case common.MessageTypeFileError:
+		return ws.handleFileError(conn, msg, agent)
+
 	case common.MessageTypePrinterStatus:
 		return ws.handlePrinterStatus(conn, msg, agent)
 
@@ -387,6 +393,40 @@ func (ws *WebSocketServer) handleFileCreateDir(conn WebSocketConn, msg *common.M
 	// Transférer le message à l'agent
 	(*agent).UpdateLastSeen()
 	return (*agent).SendMessage(msg)
+}
+
+// handleFileComplete traite la confirmation d'upload/répertoire
+func (ws *WebSocketServer) handleFileComplete(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		return ws.sendError(conn, "non authentifié")
+	}
+
+	(*agent).UpdateLastSeen()
+
+	// Si le message a un ID, c'est une réponse à une demande
+	if msg.ID != "" {
+		log.Printf("[WS] handleFileComplete - Routage de la réponse, ID: %s", msg.ID)
+		(*agent).HandleResponse(msg)
+	}
+
+	return nil
+}
+
+// handleFileError traite les erreurs de fichiers
+func (ws *WebSocketServer) handleFileError(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		return ws.sendError(conn, "non authentifié")
+	}
+
+	(*agent).UpdateLastSeen()
+
+	// Si le message a un ID, c'est une réponse à une demande
+	if msg.ID != "" {
+		log.Printf("[WS] handleFileError - Routage de l'erreur, ID: %s", msg.ID)
+		(*agent).HandleResponse(msg)
+	}
+
+	return nil
 }
 
 // handleFileList traite la liste de fichiers
