@@ -208,9 +208,30 @@ trap "rm -rf $TMP_DIR" EXIT
 AGENT_URL="$DOWNLOAD_BASE/download/agent?os=$OS&arch=$ARCH"
 echo "🔗 Connexion à $AGENT_URL..."
 
-# Télécharger avec curl (afficher les erreurs HTTP)
+# Télécharger avec curl (afficher les erreurs HTTP et les headers)
 if command -v curl &> /dev/null; then
-    HTTP_CODE=$(curl -s -o "$TMP_DIR/rms-agent" -w "%{http_code}" "$AGENT_URL" || echo "000")
+    # Télécharger le fichier et récupérer le code HTTP et les headers
+    HTTP_CODE=$(curl -s -o "$TMP_DIR/rms-agent" -w "%{http_code}" -D "$TMP_DIR/headers.txt" "$AGENT_URL" || echo "000")
+    
+    # Vérifier les headers pour confirmer quel binaire est servi
+    if [ -f "$TMP_DIR/headers.txt" ]; then
+        BINARY_HEADER=$(grep -i "X-Agent-Binary:" "$TMP_DIR/headers.txt" | cut -d' ' -f2- | tr -d '\r' || echo "")
+        OS_HEADER=$(grep -i "X-Agent-OS:" "$TMP_DIR/headers.txt" | cut -d' ' -f2- | tr -d '\r' || echo "")
+        ARCH_HEADER=$(grep -i "X-Agent-Arch:" "$TMP_DIR/headers.txt" | cut -d' ' -f2- | tr -d '\r' || echo "")
+        
+        if [ -n "$BINARY_HEADER" ]; then
+            echo "ℹ️  Binaire servi par le serveur: $BINARY_HEADER"
+            if [ -n "$OS_HEADER" ] && [ -n "$ARCH_HEADER" ]; then
+                echo "   OS: $OS_HEADER, Architecture: $ARCH_HEADER"
+                # Vérifier que le serveur a bien servi le bon binaire
+                if [ "$OS_HEADER" != "$OS" ] || [ "$ARCH_HEADER" != "$ARCH" ]; then
+                    echo ""
+                    echo "⚠️  Attention: Le serveur a servi un binaire pour $OS_HEADER/$ARCH_HEADER"
+                    echo "   mais vous avez demandé $OS/$ARCH"
+                fi
+            fi
+        fi
+    fi
     
     # Vérifier le code HTTP
     if [ "$HTTP_CODE" != "200" ]; then
@@ -271,17 +292,52 @@ if command -v file &> /dev/null; then
     fi
 fi
 
+# Vérifier la compatibilité de l'architecture du binaire
+echo "🔍 Vérification de la compatibilité du binaire..."
+BINARY_ARCH=""
+if command -v readelf &> /dev/null && [ "$OS" = "linux" ]; then
+    ARCH_INFO=$(readelf -h "$TMP_DIR/rms-agent" 2>/dev/null | grep "Machine:" || echo "")
+    echo "   Architecture du binaire téléchargé: $ARCH_INFO"
+    
+    # Détecter l'architecture du binaire
+    if echo "$ARCH_INFO" | grep -qi "x86-64\|Advanced Micro Devices X86-64"; then
+        BINARY_ARCH="amd64"
+    elif echo "$ARCH_INFO" | grep -qi "AArch64\|ARM aarch64"; then
+        BINARY_ARCH="arm64"
+    elif echo "$ARCH_INFO" | grep -qi "ARM"; then
+        BINARY_ARCH="arm"
+    fi
+    
+    # Vérifier si l'architecture correspond
+    if [ -n "$BINARY_ARCH" ] && [ "$BINARY_ARCH" != "$ARCH" ]; then
+        echo ""
+        echo "❌ ERREUR: Incompatibilité d'architecture détectée !"
+        echo "   Architecture demandée: $ARCH ($(uname -m))"
+        echo "   Architecture du binaire téléchargé: $BINARY_ARCH"
+        echo ""
+        echo "💡 Le serveur n'a probablement pas le binaire pour $OS/$ARCH"
+        echo "   Le serveur doit builder les binaires multi-plateformes:"
+        echo "   ./scripts/build.sh ou make build-all"
+        echo ""
+        echo "   Ou vérifiez que l'URL de téléchargement est correcte:"
+        echo "   $AGENT_URL"
+        echo ""
+        exit 1
+    fi
+elif [ "$OS" = "linux" ] && command -v file &> /dev/null; then
+    # Fallback avec file si readelf n'est pas disponible
+    if echo "$FILE_INFO" | grep -qi "x86-64\|x86_64" && [ "$ARCH" = "arm64" ]; then
+        echo ""
+        echo "❌ ERREUR: Le binaire téléchargé est pour x86-64 mais vous êtes sur ARM64"
+        echo "   Le serveur doit builder le binaire pour linux/arm64"
+        echo ""
+        exit 1
+    fi
+fi
+
 # Tester l'exécution du binaire (version --help devrait fonctionner)
-echo "🔍 Vérification du binaire téléchargé..."
 if ! "$TMP_DIR/rms-agent" --help &>/dev/null; then
     echo "⚠️  Le binaire ne répond pas à --help, mais cela peut être normal"
-    echo "   Vérifions que le binaire est compatible avec cette architecture..."
-    
-    # Vérifier l'architecture si 'readelf' est disponible
-    if command -v readelf &> /dev/null && [ "$OS" = "linux" ]; then
-        ARCH_INFO=$(readelf -h "$TMP_DIR/rms-agent" 2>/dev/null | grep "Machine:" || echo "")
-        echo "   Architecture du binaire: $ARCH_INFO"
-    fi
 fi
 
 echo "✅ Agent téléchargé avec succès"

@@ -224,6 +224,7 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	expectedFileName := fmt.Sprintf("agent-%s-%s%s", osParam, archParam, ext)
 
 	// Chercher le fichier dans plusieurs emplacements possibles
+	// PRIORITÉ: Chercher d'abord le binaire spécifique à l'OS/arch demandé
 	possiblePaths := []string{
 		fmt.Sprintf("./build/%s", expectedFileName),
 		fmt.Sprintf("./build/web/%s", expectedFileName),
@@ -232,24 +233,22 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 		// Fallback: chercher sans préfixe "agent-"
 		fmt.Sprintf("./build/rms-agent-%s-%s%s", osParam, archParam, ext),
 		fmt.Sprintf("./build/web/rms-agent-%s-%s%s", osParam, archParam, ext),
-		// Fallback: ancien format (pour compatibilité)
-		"./build/rms-agent",
-		"./build/web/rms-agent",
-		"./rms-agent",
-		"./web/public/rms-agent",
 	}
+	
+	// NE PAS inclure les fallbacks génériques (rms-agent sans suffixe) car ils peuvent
+	// être pour une autre architecture et causer des problèmes d'exécution
 
 	var agentPath string
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			agentPath = path
-			log.Printf("[API] downloadAgent - Fichier trouvé: %s", agentPath)
+			log.Printf("[API] downloadAgent - Binaire spécifique trouvé: %s (demandé: os=%s, arch=%s)", agentPath, osParam, archParam)
 			break
 		}
 	}
 
 	if agentPath == "" {
-		log.Printf("[API] downloadAgent - Fichier non trouvé pour os=%s, arch=%s", osParam, archParam)
+		log.Printf("[API] downloadAgent - Binaire spécifique non trouvé pour os=%s, arch=%s", osParam, archParam)
 		log.Printf("[API] downloadAgent - Chemins testés: %v", possiblePaths)
 		
 		// Vérifier quels binaires sont disponibles
@@ -286,11 +285,31 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 		downloadFileName = "rms-agent.exe"
 	}
 
+	// Vérifier que le nom du fichier correspond bien à l'architecture demandée
+	// (sécurité supplémentaire pour éviter de servir un mauvais binaire)
+	if !strings.Contains(agentPath, fmt.Sprintf("%s-%s", osParam, archParam)) && 
+	   !strings.Contains(agentPath, fmt.Sprintf("%s-%s%s", osParam, archParam, ext)) {
+		log.Printf("[API] downloadAgent - ATTENTION: Le nom du fichier trouvé (%s) ne correspond pas à la demande (os=%s, arch=%s)", agentPath, osParam, archParam)
+		// Ne pas servir le fichier si le nom ne correspond pas
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "fichier agent incompatible",
+			"os":    osParam,
+			"arch":  archParam,
+			"found": agentPath,
+			"hint":  fmt.Sprintf("Le fichier trouvé ne correspond pas à l'architecture demandée (%s/%s)", osParam, archParam),
+		})
+		return
+	}
+
 	// Définir les en-têtes pour forcer le téléchargement
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", downloadFileName))
 	c.Header("Content-Type", "application/octet-stream")
+	// Ajouter un header personnalisé pour indiquer quel binaire est servi
+	c.Header("X-Agent-Binary", expectedFileName)
+	c.Header("X-Agent-OS", osParam)
+	c.Header("X-Agent-Arch", archParam)
 	
-	log.Printf("[API] downloadAgent - Servir le fichier: %s (os=%s, arch=%s)", agentPath, osParam, archParam)
+	log.Printf("[API] downloadAgent - ✅ Servir le binaire spécifique: %s (os=%s, arch=%s, fichier=%s)", agentPath, osParam, archParam, expectedFileName)
 	
 	// Servir le fichier
 	c.File(agentPath)
