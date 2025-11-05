@@ -415,17 +415,21 @@ func (c *Client) handleCommand(msg *common.Message) error {
 
 // handleFileUpload traite l'upload de fichier
 func (c *Client) handleFileUpload(msg *common.Message) error {
+	log.Printf("[AGENT] handleFileUpload - Début, ID: %s, Type de données: %T", msg.ID, msg.Data)
+	
 	var chunks []*common.FileChunk
 	var chunksOk bool
 
 	// Gérer les différents types de données (après sérialisation JSON)
 	if chunksData, ok := msg.Data.([]*common.FileChunk); ok {
+		log.Printf("[AGENT] handleFileUpload - Type []*common.FileChunk détecté, %d chunks", len(chunksData))
 		chunks = chunksData
 		chunksOk = true
 	} else if chunksInterface, ok := msg.Data.([]interface{}); ok {
+		log.Printf("[AGENT] handleFileUpload - Type []interface{} détecté, %d éléments", len(chunksInterface))
 		// Convertir []interface{} en []*common.FileChunk
 		chunks = make([]*common.FileChunk, 0, len(chunksInterface))
-		for _, item := range chunksInterface {
+		for i, item := range chunksInterface {
 			if chunkMap, ok := item.(map[string]interface{}); ok {
 				chunk := &common.FileChunk{}
 				if pathVal, exists := chunkMap["path"]; exists {
@@ -439,15 +443,35 @@ func (c *Client) handleFileUpload(msg *common.Message) error {
 					}
 				}
 				if dataVal, exists := chunkMap["data"]; exists {
-					// Les données binaires sont encodées en base64 dans JSON
+					// Les données binaires peuvent être encodées en base64 ou être un tableau de bytes
 					if dataStr, ok := dataVal.(string); ok {
+						// Essayer de décoder en base64
 						decoded, err := base64.StdEncoding.DecodeString(dataStr)
 						if err != nil {
+							log.Printf("[AGENT] handleFileUpload - ERREUR décodage base64 chunk %d: %v", i, err)
+							errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
+								Code:    "DECODE_ERROR",
+								Message: fmt.Sprintf("erreur de décodage base64 du chunk %d: %v", i, err),
+							})
+							errorMsg.AgentID = c.agentID
+							if sendErr := c.sendMessage(errorMsg); sendErr != nil {
+								log.Printf("[AGENT] handleFileUpload - ERREUR envoi message d'erreur: %v", sendErr)
+							}
 							return fmt.Errorf("erreur de décodage base64: %v", err)
 						}
 						chunk.Data = decoded
+					} else if dataArray, ok := dataVal.([]interface{}); ok {
+						// Tableau de nombres (bytes encodés en JSON)
+						chunk.Data = make([]byte, len(dataArray))
+						for j, v := range dataArray {
+							if byteVal, ok := v.(float64); ok {
+								chunk.Data[j] = byte(byteVal)
+							}
+						}
 					} else if dataBytes, ok := dataVal.([]byte); ok {
 						chunk.Data = dataBytes
+					} else {
+						log.Printf("[AGENT] handleFileUpload - Type de données inattendu pour chunk %d: %T", i, dataVal)
 					}
 				}
 				if isLastVal, exists := chunkMap["is_last"]; exists {
@@ -461,39 +485,61 @@ func (c *Client) handleFileUpload(msg *common.Message) error {
 					}
 				}
 				chunks = append(chunks, chunk)
+			} else {
+				log.Printf("[AGENT] handleFileUpload - Élément %d n'est pas un map: %T", i, item)
 			}
 		}
 		chunksOk = true
+		log.Printf("[AGENT] handleFileUpload - Conversion terminée, %d chunks valides", len(chunks))
+	} else {
+		log.Printf("[AGENT] handleFileUpload - Type de données non géré: %T", msg.Data)
 	}
 
 	if !chunksOk || len(chunks) == 0 {
+		log.Printf("[AGENT] handleFileUpload - ERREUR: chunks invalides (chunksOk=%v, len=%d)", chunksOk, len(chunks))
 		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
 			Code:    "INVALID_DATA",
-			Message: "données de chunks invalides",
+			Message: fmt.Sprintf("données de chunks invalides (type: %T, chunksOk: %v, len: %d)", msg.Data, chunksOk, len(chunks)),
 		})
 		errorMsg.AgentID = c.agentID
-		return c.sendMessage(errorMsg)
+		if err := c.sendMessage(errorMsg); err != nil {
+			log.Printf("[AGENT] handleFileUpload - ERREUR envoi message d'erreur: %v", err)
+			return err
+		}
+		return fmt.Errorf("données de chunks invalides")
 	}
 
 	// Utiliser le chemin du premier chunk
 	path := chunks[0].Path
+	log.Printf("[AGENT] handleFileUpload - Upload de %d chunks vers %s", len(chunks), path)
 
 	// Uploader le fichier
 	if err := c.fileManager.UploadFile(path, chunks); err != nil {
+		log.Printf("[AGENT] handleFileUpload - ERREUR lors de l'upload: %v", err)
 		errorMsg := common.NewMessageWithID(common.MessageTypeFileError, msg.ID, &common.ErrorData{
 			Code:    "UPLOAD_ERROR",
 			Message: err.Error(),
 		})
 		errorMsg.AgentID = c.agentID
-		return c.sendMessage(errorMsg)
+		if sendErr := c.sendMessage(errorMsg); sendErr != nil {
+			log.Printf("[AGENT] handleFileUpload - ERREUR envoi message d'erreur: %v", sendErr)
+			return sendErr
+		}
+		return err
 	}
 
+	log.Printf("[AGENT] handleFileUpload - Upload réussi, envoi de confirmation")
 	// Confirmer l'upload
 	completeMsg := common.NewMessageWithID(common.MessageTypeFileComplete, msg.ID, &common.FileData{
 		Path: path,
 	})
 	completeMsg.AgentID = c.agentID
-	return c.sendMessage(completeMsg)
+	if err := c.sendMessage(completeMsg); err != nil {
+		log.Printf("[AGENT] handleFileUpload - ERREUR envoi message de confirmation: %v", err)
+		return err
+	}
+	log.Printf("[AGENT] handleFileUpload - Confirmation envoyée avec succès")
+	return nil
 }
 
 // handleFileDownload traite le téléchargement de fichier
