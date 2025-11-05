@@ -1204,20 +1204,25 @@ func (api *APIServer) oauth2Callback(c *gin.Context) {
 		Groups:   string(groupsJSON),
 	}
 
+	log.Printf("[OAuth2] Tentative de sauvegarde utilisateur: ID=%s, Email=%s, Name=%s", userID, userInfo.Email, userName)
+
 	// Vérifier si l'utilisateur existe déjà
 	existingUser, err := api.db.GetUser(userID)
 	if err != nil {
 		// L'utilisateur n'existe pas, créer un nouveau
 		user.CreatedAt = time.Now()
 		user.UpdatedAt = time.Now()
+		log.Printf("[OAuth2] Création d'un nouvel utilisateur dans la base de données...")
 		if err := api.db.SaveUser(user); err != nil {
-			log.Printf("Erreur de sauvegarde de l'utilisateur: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de sauvegarde de l'utilisateur"})
+			log.Printf("[OAuth2] ❌ ERREUR de sauvegarde de l'utilisateur: %v", err)
+			log.Printf("[OAuth2] Détails utilisateur: ID=%s, Email=%s, Name=%s", user.ID, user.Email, user.Name)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur de sauvegarde de l'utilisateur", "details": err.Error()})
 			return
 		}
-		log.Printf("Nouvel utilisateur créé: %s (%s)", userName, userID)
+		log.Printf("[OAuth2] ✅ Nouvel utilisateur créé avec succès dans la base de données: %s (%s)", userName, userID)
 	} else {
 		// Mettre à jour l'utilisateur existant
+		log.Printf("[OAuth2] Utilisateur existant trouvé, mise à jour...")
 		existingUser.Email = userInfo.Email
 		existingUser.Name = userName
 		existingUser.Username = userInfo.PreferredUsername
@@ -1225,10 +1230,11 @@ func (api *APIServer) oauth2Callback(c *gin.Context) {
 		existingUser.Groups = string(groupsJSON)
 		existingUser.UpdatedAt = time.Now()
 		if err := api.db.SaveUser(existingUser); err != nil {
-			log.Printf("Erreur de mise à jour de l'utilisateur: %v", err)
+			log.Printf("[OAuth2] ❌ ERREUR de mise à jour de l'utilisateur: %v", err)
+		} else {
+			log.Printf("[OAuth2] ✅ Utilisateur mis à jour avec succès: %s (%s)", userName, userID)
 		}
 		user = existingUser
-		log.Printf("Utilisateur mis à jour: %s (%s)", userName, userID)
 	}
 
 	// Générer le token JWT pour l'utilisateur web
