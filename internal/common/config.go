@@ -35,7 +35,15 @@ type Config struct {
 	OAuth2Scopes       string // Scopes séparés par des virgules
 
 	// Configuration base de données
-	DatabasePath string
+	DatabasePath string // Pour SQLite (legacy)
+	
+	// Configuration MySQL
+	MySQLHost     string
+	MySQLPort     int
+	MySQLUser     string
+	MySQLPassword string
+	MySQLDatabase string
+	MySQLEnabled  bool
 
 	// Configuration logs
 	LogLevel string
@@ -95,6 +103,27 @@ func (c *Config) LoadFromEnv() {
 	}
 	if dbPath := os.Getenv("REMOTESHELL_DB_PATH"); dbPath != "" {
 		c.DatabasePath = dbPath
+	}
+	// Configuration MySQL
+	if enabled := os.Getenv("REMOTESHELL_MYSQL_ENABLED"); enabled == "true" {
+		c.MySQLEnabled = true
+	}
+	if host := os.Getenv("REMOTESHELL_MYSQL_HOST"); host != "" {
+		c.MySQLHost = host
+	}
+	if port := os.Getenv("REMOTESHELL_MYSQL_PORT"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			c.MySQLPort = p
+		}
+	}
+	if user := os.Getenv("REMOTESHELL_MYSQL_USER"); user != "" {
+		c.MySQLUser = user
+	}
+	if password := os.Getenv("REMOTESHELL_MYSQL_PASSWORD"); password != "" {
+		c.MySQLPassword = password
+	}
+	if database := os.Getenv("REMOTESHELL_MYSQL_DATABASE"); database != "" {
+		c.MySQLDatabase = database
 	}
 	if logLevel := os.Getenv("REMOTESHELL_LOG_LEVEL"); logLevel != "" {
 		c.LogLevel = logLevel

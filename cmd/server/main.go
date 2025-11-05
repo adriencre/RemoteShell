@@ -65,16 +65,22 @@ func main() {
 	}
 
 	// Initialiser la base de données
-	databasePath := config.DatabasePath
-	if databasePath == "" {
-		databasePath = "./remoteshell.db"
-	}
-	db, err := server.NewDatabase(databasePath)
+	log.Printf("[DEBUG] Configuration MySQL - Enabled: %v, Host: %s, Port: %d, User: %s, Database: %s", 
+		config.MySQLEnabled, config.MySQLHost, config.MySQLPort, config.MySQLUser, config.MySQLDatabase)
+	db, err := server.NewDatabase(config)
 	if err != nil {
 		log.Fatalf("Erreur d'initialisation de la base de données: %v", err)
 	}
 	defer db.Close()
-	log.Printf("Base de données initialisée: %s", databasePath)
+	if config.MySQLEnabled {
+		log.Printf("✅ Base de données MySQL initialisée: %s@%s:%d/%s", config.MySQLUser, config.MySQLHost, config.MySQLPort, config.MySQLDatabase)
+	} else {
+		databasePath := config.DatabasePath
+		if databasePath == "" {
+			databasePath = "./remoteshell.db"
+		}
+		log.Printf("⚠️  Base de données SQLite initialisée: %s", databasePath)
+	}
 
 	// Créer le gestionnaire de tokens
 	tokenManager := auth.NewTokenManager(config.AuthToken, "remoteshell-server")

@@ -162,7 +162,17 @@ Accès système complet avec le nouveau gestionnaire de fichiers :
 - `REMOTESHELL_SERVER_TLS` : Activer TLS (défaut: false)
 - `REMOTESHELL_CERT_FILE` : Fichier de certificat TLS
 - `REMOTESHELL_KEY_FILE` : Fichier de clé privée TLS
-- `REMOTESHELL_DB_PATH` : Chemin de la base de données (défaut: remoteshell.db)
+- `REMOTESHELL_DB_PATH` : Chemin de la base de données SQLite (défaut: remoteshell.db)
+
+#### Base de données MySQL
+- `REMOTESHELL_MYSQL_ENABLED` : Activer MySQL (défaut: false, mettre à "true" pour activer)
+- `REMOTESHELL_MYSQL_HOST` : Adresse du serveur MySQL
+- `REMOTESHELL_MYSQL_PORT` : Port du serveur MySQL (défaut: 3306)
+- `REMOTESHELL_MYSQL_USER` : Nom d'utilisateur MySQL
+- `REMOTESHELL_MYSQL_PASSWORD` : Mot de passe MySQL
+- `REMOTESHELL_MYSQL_DATABASE` : Nom de la base de données
+
+**Note**: Toutes les tables sont préfixées par `rms_` pour éviter les conflits (ex: `rms_users`, `rms_agents`, etc.)
 
 #### Agent
 - `REMOTESHELL_AGENT_ID` : ID unique de l'agent

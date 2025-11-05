@@ -1,12 +1,22 @@
 package server
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
+	"remoteshell/internal/common"
+
 	"github.com/glebarez/sqlite" // Driver SQLite pur Go (pas besoin de CGO)
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// contains vérifie si une chaîne contient une sous-chaîne
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
 
 // Database gère la base de données
 type Database struct {
@@ -15,97 +25,147 @@ type Database struct {
 
 // User représente un utilisateur SSO
 type User struct {
-	ID        string    `gorm:"primaryKey" json:"id"` // ID depuis Authentik (sub)
-	Email     string    `gorm:"uniqueIndex" json:"email"`
-	Name      string    `json:"name"`
-	Username  string    `json:"username"`
-	Role      string    `json:"role"` // "admin" ou "user"
-	Groups    string    `json:"groups"` // JSON array des groupes
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	Email     string    `gorm:"uniqueIndex;type:varchar(191)" json:"email"`
+	Name      string    `gorm:"type:varchar(255)" json:"name"`
+	Username  string    `gorm:"type:varchar(255)" json:"username"`
+	Role      string    `gorm:"type:varchar(50)" json:"role"`
+	Groups    string    `gorm:"type:text" json:"groups"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	UpdatedAt time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+}
+
+func (User) TableName() string {
+	return "rms_users"
 }
 
 // AgentRecord représente un enregistrement d'agent en base
 type AgentRecord struct {
-	ID        string    `gorm:"primaryKey" json:"id"`
-	Name      string    `json:"name"`
-	LastSeen  time.Time `json:"last_seen"`
-	Status    string    `json:"status"`
-	IPAddress string    `json:"ip_address"`
-	UserAgent string    `json:"user_agent"`
-	Franchise string    `json:"franchise"` // Ex: "Lille", "Paris"
-	Category  string    `json:"category"`  // Ex: "Corporate", "Cantine"
-	UserID    string    `json:"user_id"`    // ID de l'utilisateur propriétaire (optionnel)
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `gorm:"primaryKey;type:varchar(191)" json:"id"`
+	Name      string    `gorm:"type:varchar(255)" json:"name"`
+	LastSeen  time.Time `gorm:"type:datetime(3)" json:"last_seen"`
+	Status    string    `gorm:"type:varchar(50)" json:"status"`
+	IPAddress string    `gorm:"type:varchar(45)" json:"ip_address"`
+	UserAgent string    `gorm:"type:varchar(500)" json:"user_agent"`
+	Franchise string    `gorm:"type:varchar(100)" json:"franchise"`
+	Category  string    `gorm:"type:varchar(100)" json:"category"`
+	UserID    string    `gorm:"type:varchar(191);index" json:"user_id"`
+	CreatedAt time.Time `gorm:"type:datetime(3)" json:"created_at"`
+	UpdatedAt time.Time `gorm:"type:datetime(3)" json:"updated_at"`
+}
+
+func (AgentRecord) TableName() string {
+	return "rms_agents"
 }
 
 // CommandLog représente un log de commande
 type CommandLog struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	AgentID    string    `json:"agent_id"`
-	Command    string    `json:"command"`
-	Args       string    `json:"args"`
-	WorkingDir string    `json:"working_dir"`
+	ID         uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID    string    `gorm:"type:varchar(191);index" json:"agent_id"`
+	Command    string    `gorm:"type:varchar(500)" json:"command"`
+	Args       string    `gorm:"type:text" json:"args"`
+	WorkingDir string    `gorm:"type:varchar(500)" json:"working_dir"`
 	ExitCode   int       `json:"exit_code"`
 	Duration   int64     `json:"duration"`
-	Stdout     string    `json:"stdout"`
-	Stderr     string    `json:"stderr"`
-	CreatedAt  time.Time `json:"created_at"`
+	Stdout     string    `gorm:"type:longtext" json:"stdout"`
+	Stderr     string    `gorm:"type:longtext" json:"stderr"`
+	CreatedAt  time.Time `gorm:"type:datetime(3);index" json:"created_at"`
+}
+
+func (CommandLog) TableName() string {
+	return "rms_command_logs"
 }
 
 // FileLog représente un log de fichier
 type FileLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Operation string    `json:"operation"` // upload, download, delete, create_dir
-	Path      string    `json:"path"`
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID   string    `gorm:"type:varchar(191);index" json:"agent_id"`
+	Operation string    `gorm:"type:varchar(50)" json:"operation"`
+	Path      string    `gorm:"type:varchar(1000)" json:"path"`
 	Size      int64     `json:"size"`
 	Success   bool      `json:"success"`
-	Error     string    `json:"error"`
-	CreatedAt time.Time `json:"created_at"`
+	Error     string    `gorm:"type:text" json:"error"`
+	CreatedAt time.Time `gorm:"type:datetime(3);index" json:"created_at"`
+}
+
+func (FileLog) TableName() string {
+	return "rms_file_logs"
 }
 
 // PrinterLog représente un log d'imprimante
 type PrinterLog struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	AgentID     string    `json:"agent_id"`
-	PrinterName string    `json:"printer_name"`
-	Status      string    `json:"status"`
+	ID          uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID     string    `gorm:"type:varchar(191);index" json:"agent_id"`
+	PrinterName string    `gorm:"type:varchar(255)" json:"printer_name"`
+	Status      string    `gorm:"type:varchar(100)" json:"status"`
 	JobCount    int       `json:"job_count"`
-	CreatedAt   time.Time `json:"created_at"`
+	CreatedAt   time.Time `gorm:"type:datetime(3);index" json:"created_at"`
+}
+
+func (PrinterLog) TableName() string {
+	return "rms_printer_logs"
 }
 
 // SystemLog représente un log système
 type SystemLog struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
-	AgentID     string    `json:"agent_id"`
-	Hostname    string    `json:"hostname"`
-	OS          string    `json:"os"`
-	Arch        string    `json:"arch"`
+	ID          uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	AgentID     string    `gorm:"type:varchar(191);index" json:"agent_id"`
+	Hostname    string    `gorm:"type:varchar(255)" json:"hostname"`
+	OS          string    `gorm:"type:varchar(100)" json:"os"`
+	Arch        string    `gorm:"type:varchar(50)" json:"arch"`
 	Uptime      int64     `json:"uptime"`
 	MemoryTotal int64     `json:"memory_total"`
 	MemoryUsed  int64     `json:"memory_used"`
 	DiskTotal   int64     `json:"disk_total"`
 	DiskUsed    int64     `json:"disk_used"`
-	CreatedAt   time.Time `json:"created_at"`
+	CreatedAt   time.Time `gorm:"type:datetime(3);index" json:"created_at"`
+}
+
+func (SystemLog) TableName() string {
+	return "rms_system_logs"
 }
 
 // NewDatabase crée une nouvelle instance de base de données
-func NewDatabase(dbPath string) (*Database, error) {
+// Si MySQL est configuré, utilise MySQL, sinon utilise SQLite
+func NewDatabase(config *common.Config) (*Database, error) {
 	// Configuration GORM
-	config := &gorm.Config{
+	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	}
 
-	// Connexion SQLite avec driver pur Go (pas besoin de CGO)
-	// github.com/glebarez/sqlite est une implémentation pure Go de SQLite
-	db, err := gorm.Open(sqlite.Open(dbPath), config)
-	if err != nil {
-		return nil, err
+	var db *gorm.DB
+	var err error
+
+	// Vérifier si MySQL est activé
+	if config.MySQLEnabled && config.MySQLHost != "" {
+		// Construire la DSN MySQL
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+			config.MySQLUser,
+			config.MySQLPassword,
+			config.MySQLHost,
+			config.MySQLPort,
+			config.MySQLDatabase,
+		)
+
+		// Connexion MySQL
+		db, err = gorm.Open(mysql.Open(dsn), gormConfig)
+		if err != nil {
+			return nil, fmt.Errorf("erreur de connexion MySQL: %w", err)
+		}
+	} else {
+		// Fallback sur SQLite
+		dbPath := config.DatabasePath
+		if dbPath == "" {
+			dbPath = "./remoteshell.db"
+		}
+		db, err = gorm.Open(sqlite.Open(dbPath), gormConfig)
+		if err != nil {
+			return nil, fmt.Errorf("erreur de connexion SQLite: %w", err)
+		}
 	}
 
 	// Auto-migration des modèles
+	// Ignorer les erreurs de suppression d'index/clé qui n'existent pas (lors des migrations)
 	if err := db.AutoMigrate(
 		&User{},
 		&AgentRecord{},
@@ -114,7 +174,14 @@ func NewDatabase(dbPath string) (*Database, error) {
 		&PrinterLog{},
 		&SystemLog{},
 	); err != nil {
-		return nil, err
+		// Les erreurs de type "Can't DROP" sont normales lors des migrations
+		// On les ignore car les tables sont déjà créées avec les bons index
+		errMsg := err.Error()
+		if !contains(errMsg, "Can't DROP") && !contains(errMsg, "check that column/key exists") {
+			return nil, fmt.Errorf("erreur de migration: %w", err)
+		}
+		// Log mais ne pas bloquer si c'est juste une erreur de DROP
+		fmt.Printf("[INFO] Migration: erreur ignorée (index/clé déjà supprimé): %v\n", err)
 	}
 
 	return &Database{db: db}, nil
