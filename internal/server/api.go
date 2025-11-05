@@ -82,6 +82,7 @@ func (api *APIServer) setupRoutes() {
 
 	// Routes publiques
 	api.router.GET("/health", api.healthCheck)
+	api.router.GET("/api/database/info", api.getDatabaseInfo)
 	api.router.GET("/download/agent", api.downloadAgent)
 	api.router.GET("/download/install-agent.sh", api.downloadInstallScript)
 
@@ -155,6 +156,38 @@ func (api *APIServer) healthCheck(c *gin.Context) {
 		"timestamp": time.Now(),
 		"agents":    api.hub.GetAgentCount(),
 	})
+}
+
+// getDatabaseInfo retourne les informations sur la base de données utilisée
+func (api *APIServer) getDatabaseInfo(c *gin.Context) {
+	info := gin.H{
+		"type": "unknown",
+	}
+
+	if api.config.MySQLEnabled && api.config.MySQLHost != "" {
+		info["type"] = "MySQL"
+		info["host"] = api.config.MySQLHost
+		info["port"] = api.config.MySQLPort
+		info["database"] = api.config.MySQLDatabase
+		info["user"] = api.config.MySQLUser
+		// Vérifier les tables
+		stats, err := api.db.GetStats()
+		if err == nil {
+			info["stats"] = stats
+		}
+	} else {
+		info["type"] = "SQLite"
+		info["path"] = api.config.DatabasePath
+		if info["path"] == "" {
+			info["path"] = "./remoteshell.db"
+		}
+		stats, err := api.db.GetStats()
+		if err == nil {
+			info["stats"] = stats
+		}
+	}
+
+	c.JSON(http.StatusOK, info)
 }
 
 // downloadAgent sert le fichier binaire de l'agent pour téléchargement
