@@ -200,7 +200,7 @@ const Terminal: React.FC = () => {
           {/* Terminal Output */}
           <div 
             ref={terminalRef}
-            className="bg-black text-green-400 font-mono text-sm p-4 rounded-lg h-96 overflow-y-auto mb-4"
+            className="bg-black text-green-400 font-mono text-sm p-4 rounded-lg h-[calc(100vh-350px)] overflow-y-auto mb-4"
           >
             {history.length === 0 ? (
               <div className="text-gray-500">
@@ -291,17 +291,6 @@ const Terminal: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Tips */}
-      <div className="card p-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-2">💡 Conseils</h3>
-        <ul className="text-sm text-gray-600 space-y-1">
-          <li>• Utilisez <code className="bg-gray-100 px-1 rounded">ls -la</code> pour lister les fichiers</li>
-          <li>• Utilisez <code className="bg-gray-100 px-1 rounded">pwd</code> pour voir le répertoire courant</li>
-          <li>• Utilisez <code className="bg-gray-100 px-1 rounded">ps aux</code> pour voir les processus</li>
-          <li>• Cliquez sur "Copier" pour copier la sortie d'une commande</li>
-        </ul>
       </div>
     </div>
   )
