@@ -259,6 +259,31 @@ if [ ! -f "$TMP_DIR/rms-agent" ] || [ ! -s "$TMP_DIR/rms-agent" ]; then
 fi
 
 chmod +x "$TMP_DIR/rms-agent"
+
+# Vérifier le type de fichier si la commande 'file' est disponible
+if command -v file &> /dev/null; then
+    FILE_INFO=$(file "$TMP_DIR/rms-agent" 2>/dev/null || echo "")
+    echo "ℹ️  Type de fichier: $FILE_INFO"
+    
+    # Vérifier que c'est bien un binaire exécutable
+    if ! echo "$FILE_INFO" | grep -qE "(ELF|executable|binary)"; then
+        echo "⚠️  Attention: Le fichier ne semble pas être un binaire exécutable"
+    fi
+fi
+
+# Tester l'exécution du binaire (version --help devrait fonctionner)
+echo "🔍 Vérification du binaire téléchargé..."
+if ! "$TMP_DIR/rms-agent" --help &>/dev/null; then
+    echo "⚠️  Le binaire ne répond pas à --help, mais cela peut être normal"
+    echo "   Vérifions que le binaire est compatible avec cette architecture..."
+    
+    # Vérifier l'architecture si 'readelf' est disponible
+    if command -v readelf &> /dev/null && [ "$OS" = "linux" ]; then
+        ARCH_INFO=$(readelf -h "$TMP_DIR/rms-agent" 2>/dev/null | grep "Machine:" || echo "")
+        echo "   Architecture du binaire: $ARCH_INFO"
+    fi
+fi
+
 echo "✅ Agent téléchargé avec succès"
 echo ""
 

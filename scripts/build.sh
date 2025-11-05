@@ -116,10 +116,6 @@ build_binaries() {
         
         log "Build pour $os/$arch..."
         
-        # Variables d'environnement pour le build
-        export GOOS=$os
-        export GOARCH=$arch
-        
         # Nom du fichier de sortie
         if [ "$os" = "windows" ]; then
             EXT=".exe"
@@ -127,15 +123,15 @@ build_binaries() {
             EXT=""
         fi
         
-        # Build du serveur
+        # Build du serveur (statique, sans CGO pour compatibilité maximale)
         SERVER_OUTPUT="$BUILD_DIR/server-${os}-${arch}${EXT}"
         log "  - Serveur: $SERVER_OUTPUT"
-        go build -ldflags "-X main.version=$VERSION" -o "$SERVER_OUTPUT" ./cmd/server
+        CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$SERVER_OUTPUT" ./cmd/server
         
-        # Build de l'agent
+        # Build de l'agent (statique, sans CGO pour compatibilité maximale)
         AGENT_OUTPUT="$BUILD_DIR/agent-${os}-${arch}${EXT}"
         log "  - Agent: $AGENT_OUTPUT"
-        go build -ldflags "-X main.version=$VERSION" -o "$AGENT_OUTPUT" ./cmd/agent
+        CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$AGENT_OUTPUT" ./cmd/agent
         
         success "Build terminé pour $os/$arch"
     done
