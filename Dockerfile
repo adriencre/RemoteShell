@@ -26,6 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflag
 # Build des agents multi-plateformes (pour téléchargement via API)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-linux-amd64 ./cmd/agent
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-linux-arm64 ./cmd/agent
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-linux-armv7l ./cmd/agent
 RUN CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-darwin-amd64 ./cmd/agent
 RUN CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-darwin-arm64 ./cmd/agent
 RUN CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/agent-windows-amd64.exe ./cmd/agent
@@ -34,6 +35,7 @@ RUN CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -a -installsuffix cgo -ldfl
 # Build des serveurs multi-plateformes (optionnel, pour téléchargement)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/server-linux-amd64 ./cmd/server
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/server-linux-arm64 ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o build/server-linux-armv7l ./cmd/server
 
 # Build de l'interface web
 FROM node:18-alpine AS web-builder
