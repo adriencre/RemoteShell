@@ -198,7 +198,25 @@ func (d *Database) Close() error {
 
 // SaveAgent sauvegarde ou met à jour un agent
 func (d *Database) SaveAgent(agent *AgentRecord) error {
-	return d.db.Save(agent).Error
+	// Vérifier si l'agent existe déjà
+	var existing AgentRecord
+	err := d.db.Where("id = ?", agent.ID).First(&existing).Error
+	
+	if err == nil {
+		// L'agent existe, faire une mise à jour en excluant CreatedAt
+		// Utiliser Updates pour ne mettre à jour que les champs spécifiés
+		return d.db.Model(agent).Omit("created_at").Updates(agent).Error
+	} else if err == gorm.ErrRecordNotFound {
+		// L'agent n'existe pas, créer un nouvel enregistrement
+		// S'assurer que CreatedAt est défini si c'est zéro
+		if agent.CreatedAt.IsZero() {
+			agent.CreatedAt = time.Now()
+		}
+		return d.db.Create(agent).Error
+	} else {
+		// Autre erreur
+		return err
+	}
 }
 
 // GetAgent récupère un agent par son ID
