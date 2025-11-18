@@ -246,7 +246,7 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 		fmt.Sprintf("./build/web/rms-agent-%s-%s%s", osParam, archParam, ext),
 		fmt.Sprintf("%s/build/rms-agent-%s-%s%s", workDir, osParam, archParam, ext),
 	}
-	
+
 	// NE PAS inclure les fallbacks génériques (rms-agent sans suffixe) car ils peuvent
 	// être pour une autre architecture et causer des problèmes d'exécution
 
@@ -268,7 +268,7 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 		log.Printf("[API] downloadAgent - ❌ Binaire spécifique non trouvé pour os=%s, arch=%s", osParam, archParam)
 		log.Printf("[API] downloadAgent - Répertoire de travail: %s", workDir)
 		log.Printf("[API] downloadAgent - Chemins testés: %v", checkedPaths)
-		
+
 		// Vérifier quels binaires sont disponibles
 		availableBinaries := []string{}
 		// Chercher dans plusieurs emplacements possibles
@@ -291,13 +291,13 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 				log.Printf("[API] downloadAgent - Répertoire %s n'existe pas ou erreur: %v", buildDir, err)
 			}
 		}
-		
+
 		errorMsg := fmt.Sprintf("Le binaire agent-%s-%s%s n'est pas disponible.", osParam, archParam, ext)
 		if len(availableBinaries) > 0 {
 			errorMsg += fmt.Sprintf(" Binaires disponibles: %v.", availableBinaries)
 		}
 		errorMsg += " Pour générer les binaires multi-plateformes, exécutez: ./scripts/build.sh ou make build-all"
-		
+
 		c.JSON(http.StatusNotFound, gin.H{
 			"error":     "fichier agent non trouvé",
 			"os":        osParam,
@@ -317,8 +317,8 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 
 	// Vérifier que le nom du fichier correspond bien à l'architecture demandée
 	// (sécurité supplémentaire pour éviter de servir un mauvais binaire)
-	if !strings.Contains(agentPath, fmt.Sprintf("%s-%s", osParam, archParam)) && 
-	   !strings.Contains(agentPath, fmt.Sprintf("%s-%s%s", osParam, archParam, ext)) {
+	if !strings.Contains(agentPath, fmt.Sprintf("%s-%s", osParam, archParam)) &&
+		!strings.Contains(agentPath, fmt.Sprintf("%s-%s%s", osParam, archParam, ext)) {
 		log.Printf("[API] downloadAgent - ATTENTION: Le nom du fichier trouvé (%s) ne correspond pas à la demande (os=%s, arch=%s)", agentPath, osParam, archParam)
 		// Ne pas servir le fichier si le nom ne correspond pas
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -338,9 +338,9 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 	c.Header("X-Agent-Binary", expectedFileName)
 	c.Header("X-Agent-OS", osParam)
 	c.Header("X-Agent-Arch", archParam)
-	
+
 	log.Printf("[API] downloadAgent - ✅ Servir le binaire spécifique: %s (os=%s, arch=%s, fichier=%s)", agentPath, osParam, archParam, expectedFileName)
-	
+
 	// Servir le fichier
 	c.File(agentPath)
 }
@@ -361,7 +361,7 @@ func (api *APIServer) downloadInstallScript(c *gin.Context) {
 		fmt.Sprintf("%s/scripts/install-agent.sh", workDir),
 		fmt.Sprintf("%s/install-agent.sh", workDir),
 		"/app/scripts/install-agent.sh", // Pour Docker
-		"/app/install-agent.sh",           // Pour Docker
+		"/app/install-agent.sh",         // Pour Docker
 	}
 
 	var scriptPath string
@@ -388,7 +388,7 @@ func (api *APIServer) downloadInstallScript(c *gin.Context) {
 	// Définir les en-têtes pour servir le script
 	c.Header("Content-Type", "text/x-shellscript")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "install-agent.sh"))
-	
+
 	// Servir le fichier
 	c.File(scriptPath)
 }
@@ -584,7 +584,7 @@ func (api *APIServer) updateAgentMetadata(c *gin.Context) {
 				existingRecord.IPAddress = agent.Conn.RemoteAddr()
 			}
 		}
-		
+
 		// Mettre à jour uniquement les métadonnées et les champs nécessaires
 		existingRecord.Franchise = metadata.Franchise
 		existingRecord.Category = metadata.Category
@@ -595,7 +595,7 @@ func (api *APIServer) updateAgentMetadata(c *gin.Context) {
 		}
 		existingRecord.Status = "online"
 		existingRecord.UpdatedAt = time.Now()
-		
+
 		if err := api.db.SaveAgent(existingRecord); err != nil {
 			log.Printf("Erreur lors de la sauvegarde des métadonnées de l'agent %s en base: %v", agent.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur lors de la sauvegarde en base de données"})
@@ -885,7 +885,7 @@ func (api *APIServer) uploadFile(c *gin.Context) {
 	if response.Type != common.MessageTypeFileComplete {
 		log.Printf("[API] uploadFile - Réponse inattendue: Type=%s (attendu: %s), ID=%s", response.Type, common.MessageTypeFileComplete, response.ID)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "réponse inattendue de l'agent",
+			"error":         "réponse inattendue de l'agent",
 			"response_type": string(response.Type),
 			"expected_type": string(common.MessageTypeFileComplete),
 		})
@@ -932,22 +932,22 @@ func getParentPath(filePath string) string {
 
 	// Normaliser les séparateurs
 	filePath = strings.ReplaceAll(filePath, "\\", "/")
-	
+
 	// Enlever le dernier séparateur s'il existe
 	filePath = strings.TrimSuffix(filePath, "/")
-	
+
 	// Trouver le dernier séparateur
 	lastSlash := strings.LastIndex(filePath, "/")
 	if lastSlash == -1 {
 		return "/"
 	}
-	
+
 	// Extraire le parent
 	parent := filePath[:lastSlash]
 	if parent == "" {
 		return "/"
 	}
-	
+
 	return parent
 }
 
@@ -1029,7 +1029,7 @@ func (api *APIServer) deleteFile(c *gin.Context) {
 		if errorData != nil && errorData.Message != "" {
 			errorMsg = errorData.Message
 		}
-		
+
 		// Enregistrer l'erreur dans les logs
 		if api.db != nil {
 			fileLog := &FileLog{
@@ -1044,7 +1044,7 @@ func (api *APIServer) deleteFile(c *gin.Context) {
 				log.Printf("Erreur lors de l'enregistrement du log de suppression: %v", err)
 			}
 		}
-		
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
@@ -1125,7 +1125,7 @@ func (api *APIServer) createDirectory(c *gin.Context) {
 		if errorData != nil && errorData.Message != "" {
 			errorMsg = errorData.Message
 		}
-		
+
 		// Enregistrer l'erreur dans les logs
 		if api.db != nil {
 			fileLog := &FileLog{
@@ -1140,7 +1140,7 @@ func (api *APIServer) createDirectory(c *gin.Context) {
 				log.Printf("Erreur lors de l'enregistrement du log de création de répertoire: %v", err)
 			}
 		}
-		
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}

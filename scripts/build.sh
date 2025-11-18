@@ -20,6 +20,7 @@ DIST_DIR="dist"
 PLATFORMS=(
     "linux/amd64"
     "linux/arm64"
+    "linux/arm"
     "windows/amd64"
     "windows/arm64"
     "darwin/amd64"
@@ -123,17 +124,33 @@ build_binaries() {
             EXT=""
         fi
         
+        # Déterminer le nom d'architecture pour les fichiers de sortie
+        OUTPUT_ARCH=$arch
+        
+        # Pour ARM 32-bit, utiliser armv7l et GOARM=7
+        if [ "$arch" = "arm" ]; then
+            OUTPUT_ARCH="armv7l"
+        fi
+        
         # Build du serveur (statique, sans CGO pour compatibilité maximale)
-        SERVER_OUTPUT="$BUILD_DIR/server-${os}-${arch}${EXT}"
+        SERVER_OUTPUT="$BUILD_DIR/server-${os}-${OUTPUT_ARCH}${EXT}"
         log "  - Serveur: $SERVER_OUTPUT"
-        CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$SERVER_OUTPUT" ./cmd/server
+        if [ "$arch" = "arm" ]; then
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch GOARM=7 go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$SERVER_OUTPUT" ./cmd/server
+        else
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$SERVER_OUTPUT" ./cmd/server
+        fi
         
         # Build de l'agent (statique, sans CGO pour compatibilité maximale)
-        AGENT_OUTPUT="$BUILD_DIR/agent-${os}-${arch}${EXT}"
+        AGENT_OUTPUT="$BUILD_DIR/agent-${os}-${OUTPUT_ARCH}${EXT}"
         log "  - Agent: $AGENT_OUTPUT"
-        CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$AGENT_OUTPUT" ./cmd/agent
+        if [ "$arch" = "arm" ]; then
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch GOARM=7 go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$AGENT_OUTPUT" ./cmd/agent
+        else
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -a -installsuffix cgo -ldflags "-X main.version=$VERSION -extldflags '-static'" -o "$AGENT_OUTPUT" ./cmd/agent
+        fi
         
-        success "Build terminé pour $os/$arch"
+        success "Build terminé pour $os/$OUTPUT_ARCH"
     done
 }
 
@@ -152,7 +169,13 @@ create_packages() {
             PACKAGE_EXT=".tar.gz"
         fi
         
-        PACKAGE_NAME="${PROJECT_NAME}-${VERSION}-${os}-${arch}"
+        # Déterminer le nom d'architecture pour les fichiers
+        OUTPUT_ARCH=$arch
+        if [ "$arch" = "arm" ]; then
+            OUTPUT_ARCH="armv7l"
+        fi
+        
+        PACKAGE_NAME="${PROJECT_NAME}-${VERSION}-${os}-${OUTPUT_ARCH}"
         PACKAGE_DIR="$DIST_DIR/$PACKAGE_NAME"
         
         log "Création du package $PACKAGE_NAME..."
@@ -161,8 +184,8 @@ create_packages() {
         mkdir -p "$PACKAGE_DIR"
         
         # Copier les binaires
-        cp "$BUILD_DIR/server-${os}-${arch}${EXT}" "$PACKAGE_DIR/remoteshell-server${EXT}"
-        cp "$BUILD_DIR/agent-${os}-${arch}${EXT}" "$PACKAGE_DIR/rms-agent${EXT}"
+        cp "$BUILD_DIR/server-${os}-${OUTPUT_ARCH}${EXT}" "$PACKAGE_DIR/remoteshell-server${EXT}"
+        cp "$BUILD_DIR/agent-${os}-${OUTPUT_ARCH}${EXT}" "$PACKAGE_DIR/rms-agent${EXT}"
         
         # Copier l'interface web
         cp -r "$BUILD_DIR/web" "$PACKAGE_DIR/"

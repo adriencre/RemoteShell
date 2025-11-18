@@ -176,8 +176,15 @@ case "$(uname -m)" in
     aarch64|arm64)
         ARCH="arm64"
         ;;
-    armv7l|armv6l)
-        ARCH="arm"
+    armv7l)
+        ARCH="armv7l"
+        ;;
+    armv6l)
+        ARCH="armv6l"
+        ;;
+    arm*)
+        # Autres variantes ARM 32-bit, utiliser armv7l par défaut
+        ARCH="armv7l"
         ;;
     *)
         echo "⚠️  Architecture non reconnue: $(uname -m), tentative avec amd64..."
@@ -308,8 +315,19 @@ if command -v readelf &> /dev/null && [ "$OS" = "linux" ]; then
         BINARY_ARCH="arm"
     fi
     
-    # Vérifier si l'architecture correspond
-    if [ -n "$BINARY_ARCH" ] && [ "$BINARY_ARCH" != "$ARCH" ]; then
+    # Vérifier si l'architecture correspond (arm est compatible avec armv7l/armv6l)
+    ARCH_MATCH=false
+    if [ -n "$BINARY_ARCH" ]; then
+        if [ "$BINARY_ARCH" = "$ARCH" ]; then
+            ARCH_MATCH=true
+        elif [ "$BINARY_ARCH" = "arm" ] && [ "$ARCH" = "armv7l" ]; then
+            ARCH_MATCH=true
+        elif [ "$BINARY_ARCH" = "arm" ] && [ "$ARCH" = "armv6l" ]; then
+            ARCH_MATCH=true
+        fi
+    fi
+    
+    if [ "$ARCH_MATCH" = false ] && [ -n "$BINARY_ARCH" ]; then
         echo ""
         echo "❌ ERREUR: Incompatibilité d'architecture détectée !"
         echo "   Architecture demandée: $ARCH ($(uname -m))"
