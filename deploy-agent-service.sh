@@ -5,6 +5,10 @@
 
 set -e
 
+# Définir un PATH complet pour assurer l'accès à tous les binaires système
+# Nécessaire sur Raspberry Pi où certains binaires sont dans /sbin ou /usr/sbin
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 # Couleurs
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -93,14 +97,24 @@ if pgrep -f rms-agent > /dev/null 2>&1; then
     sleep 1
 fi
 
-# Créer les répertoires nécessaires
-sudo mkdir -p /usr/local/bin
+# Créer les répertoires nécessaires et détecter bin vs sbin
 sudo mkdir -p /etc/remoteshell
 
-# Copier l agent dans /usr/local/bin
-echo "📋 Copie du nouvel agent..."
-sudo cp ~/rms-agent /usr/local/bin/rms-agent
-sudo chmod +x /usr/local/bin/rms-agent
+# Détecter si le système utilise /usr/local/bin ou /usr/local/sbin
+if [ -d /usr/local/bin ]; then
+    INSTALL_DIR="/usr/local/bin"
+elif [ -d /usr/local/sbin ]; then
+    INSTALL_DIR="/usr/local/sbin"
+    echo "ℹ️  Utilisation de /usr/local/sbin (détecté sur ce système)"
+else
+    sudo mkdir -p /usr/local/bin
+    INSTALL_DIR="/usr/local/bin"
+fi
+
+# Copier l agent dans le répertoire détecté
+echo "📋 Copie du nouvel agent vers \$INSTALL_DIR..."
+sudo cp ~/rms-agent \$INSTALL_DIR/rms-agent
+sudo chmod +x \$INSTALL_DIR/rms-agent
 
 # Créer le fichier de configuration
 echo "SERVER_URL=${SERVER_URL}" > /tmp/agent.conf
@@ -125,7 +139,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/rms-agent --server SERVER_URL_PLACEHOLDER --id "AGENT_ID_PLACEHOLDER" --name "AGENT_NAME_PLACEHOLDER" --token "TOKEN_PLACEHOLDER"
+ExecStart=INSTALL_DIR_PLACEHOLDER/rms-agent --server SERVER_URL_PLACEHOLDER --id "AGENT_ID_PLACEHOLDER" --name "AGENT_NAME_PLACEHOLDER" --token "TOKEN_PLACEHOLDER"
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -137,6 +151,7 @@ WantedBy=multi-user.target
 SERVICE
 
 # Remplacer les placeholders par les vraies valeurs
+sed -i "s|INSTALL_DIR_PLACEHOLDER|\${INSTALL_DIR}|g" /tmp/rms-agent.service
 sed -i "s|SERVER_URL_PLACEHOLDER|${ESCAPED_SERVER_URL}|g" /tmp/rms-agent.service
 sed -i "s|AGENT_ID_PLACEHOLDER|${ESCAPED_AGENT_ID}|g" /tmp/rms-agent.service
 sed -i "s|AGENT_NAME_PLACEHOLDER|${ESCAPED_AGENT_NAME}|g" /tmp/rms-agent.service

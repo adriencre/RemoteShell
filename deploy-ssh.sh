@@ -5,6 +5,10 @@
 
 set -e
 
+# Définir un PATH complet pour assurer l'accès à tous les binaires système
+# Nécessaire sur Raspberry Pi où certains binaires sont dans /sbin ou /usr/sbin
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 # Couleurs
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

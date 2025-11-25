@@ -9,6 +9,10 @@
 
 set -e
 
+# Définir un PATH complet pour assurer l'accès à tous les binaires système
+# Nécessaire sur Raspberry Pi où certains binaires sont dans /sbin ou /usr/sbin
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Installation automatique de l'agent RemoteShell"
 echo "═══════════════════════════════════════════════════════════════"
@@ -25,8 +29,8 @@ fi
 echo "📋 Configuration de l'agent RemoteShell"
 echo ""
 
-# Valeur par défaut (sans port pour HTTPS)
-DEFAULT_SERVER_URL="rms.lfgroup.fr"
+# Valeur par défaut avec port 443 pour HTTPS/WSS
+DEFAULT_SERVER_URL="rms.lfgroup.fr:443"
 
 # Vérifier si stdin est disponible (tty) pour poser des questions interactives
 if [ ! -t 0 ]; then
@@ -383,14 +387,14 @@ while [ -z "$AGENT_NAME" ]; do
     fi
 done
 
-# Demander le token d'authentification
-while [ -z "$AUTH_TOKEN" ]; do
-    read -sp "Token d'authentification: " AUTH_TOKEN
-    echo ""
-    if [ -z "$AUTH_TOKEN" ]; then
-        echo "⚠️  Le token d'authentification ne peut pas être vide. Veuillez réessayer."
-    fi
-done
+# Demander le token d'authentification avec valeur par défaut
+DEFAULT_TOKEN="votre-token-securise-changez-moi"
+read -sp "Token d'authentification [défaut: $DEFAULT_TOKEN]: " AUTH_TOKEN
+echo ""
+if [ -z "$AUTH_TOKEN" ]; then
+    AUTH_TOKEN="$DEFAULT_TOKEN"
+    echo "✅ Utilisation du token par défaut (pensez à le changer en production !)"
+fi
 
 echo ""
 echo "🔧 Installation en cours..."
@@ -414,27 +418,43 @@ if systemctl list-unit-files | grep -q "rms-agent.service"; then
     fi
 fi
 
-# Vérifier si le fichier existe et est en cours d'utilisation
-if [ -f /usr/local/bin/rms-agent ]; then
-    if lsof /usr/local/bin/rms-agent >/dev/null 2>&1; then
-        echo "⚠️  Le fichier agent est en cours d'utilisation, arrêt forcé..."
-        systemctl stop rms-agent 2>/dev/null || true
-        sleep 2
+# Vérifier si le fichier existe et est en cours d'utilisation (dans bin ou sbin)
+for OLD_AGENT_PATH in /usr/local/bin/rms-agent /usr/local/sbin/rms-agent; do
+    if [ -f "$OLD_AGENT_PATH" ]; then
+        if command -v lsof >/dev/null 2>&1 && lsof "$OLD_AGENT_PATH" >/dev/null 2>&1; then
+            echo "⚠️  Le fichier agent est en cours d'utilisation, arrêt forcé..."
+            systemctl stop rms-agent 2>/dev/null || true
+            sleep 2
+        fi
+        echo "🗑️  Suppression de l'ancien agent ($OLD_AGENT_PATH)..."
     fi
-    echo "🗑️  Suppression de l'ancien agent..."
-fi
+done
 
 # Créer les répertoires nécessaires
 mkdir -p /opt/remoteshell
 mkdir -p /etc/remoteshell
 
-# Copier l'agent (supprimer l'ancien si nécessaire)
-echo "📋 Installation de l'agent vers /usr/local/bin/..."
-if [ -f /usr/local/bin/rms-agent ]; then
-    rm -f /usr/local/bin/rms-agent
+# Détecter si le système utilise /usr/local/bin ou /usr/local/sbin
+# Sur certains systèmes (comme Raspberry Pi), seul /usr/local/sbin existe
+INSTALL_DIR=""
+if [ -d /usr/local/bin ]; then
+    INSTALL_DIR="/usr/local/bin"
+elif [ -d /usr/local/sbin ]; then
+    INSTALL_DIR="/usr/local/sbin"
+    echo "ℹ️  Utilisation de /usr/local/sbin (détecté sur ce système)"
+else
+    # Si aucun n'existe, créer /usr/local/bin par défaut
+    mkdir -p /usr/local/bin
+    INSTALL_DIR="/usr/local/bin"
 fi
-cp "$TMP_DIR/rms-agent" /usr/local/bin/rms-agent
-chmod +x /usr/local/bin/rms-agent
+
+# Copier l'agent (supprimer l'ancien si nécessaire)
+echo "📋 Installation de l'agent vers $INSTALL_DIR/..."
+if [ -f $INSTALL_DIR/rms-agent ]; then
+    rm -f $INSTALL_DIR/rms-agent
+fi
+cp "$TMP_DIR/rms-agent" $INSTALL_DIR/rms-agent
+chmod +x $INSTALL_DIR/rms-agent
 
 # Créer le fichier de configuration
 echo "📝 Création du fichier de configuration..."
@@ -490,7 +510,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/remoteshell
-ExecStart=/usr/local/bin/rms-agent --server ${SERVER_HOST_PORT} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN} ${USE_TLS}
+ExecStart=${INSTALL_DIR}/rms-agent --server ${SERVER_HOST_PORT} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN} ${USE_TLS}
 Restart=always
 RestartSec=10
 StandardOutput=journal
