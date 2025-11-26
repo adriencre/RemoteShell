@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
 	"sync"
@@ -8,6 +9,14 @@ import (
 
 	"remoteshell/internal/common"
 )
+
+// DownloadSession représente une session de téléchargement en cours
+type DownloadSession struct {
+	Chunks []*common.FileChunk
+	Done   chan bool
+	Error  error
+	mu     sync.Mutex
+}
 
 // Agent représente un agent connecté
 type Agent struct {
@@ -21,6 +30,7 @@ type Agent struct {
 	Services   []*common.ServiceInfo         // Cache des services
 	LogSources []*common.LogSource           // Cache des sources de logs
 	responses  map[string]chan *common.Message
+	downloads  map[string]*DownloadSession // Sessions de téléchargement en cours
 	mu         sync.RWMutex
 }
 
@@ -116,9 +126,10 @@ func (h *Hub) registerAgent(agent *Agent) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Initialiser le map des réponses et le cache de fichiers
+	// Initialiser le map des réponses, le cache de fichiers et les téléchargements
 	agent.responses = make(map[string]chan *common.Message)
 	agent.FileCache = make(map[string][]*common.FileData)
+	agent.downloads = make(map[string]*DownloadSession)
 
 	h.agents[agent.ID] = agent
 	log.Printf("Agent enregistré: %s (%s) depuis %s", agent.Name, agent.ID, agent.Conn.RemoteAddr())
@@ -354,6 +365,178 @@ func (a *Agent) HandleResponse(response *common.Message) {
 		default:
 			// Canal plein, ignorer la réponse
 		}
+	}
+}
+
+// SendMessageWithDownload envoie un message de téléchargement et collecte tous les chunks
+func (a *Agent) SendMessageWithDownload(message *common.Message, timeout time.Duration) ([]*common.FileChunk, error) {
+	// Générer un ID unique pour le message si pas déjà présent
+	if message.ID == "" {
+		message.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+
+	// Créer une session de téléchargement
+	session := &DownloadSession{
+		Chunks: make([]*common.FileChunk, 0),
+		Done:   make(chan bool, 1),
+	}
+
+	a.mu.Lock()
+	a.downloads[message.ID] = session
+	a.mu.Unlock()
+
+	// Nettoyer la session après utilisation
+	defer func() {
+		a.mu.Lock()
+		delete(a.downloads, message.ID)
+		a.mu.Unlock()
+	}()
+
+	// Envoyer le message
+	if err := a.SendMessage(message); err != nil {
+		return nil, err
+	}
+
+	// Attendre la fin du téléchargement avec timeout
+	select {
+	case <-session.Done:
+		if session.Error != nil {
+			return nil, session.Error
+		}
+		// Trier les chunks par offset
+		session.mu.Lock()
+		chunks := session.Chunks
+		session.mu.Unlock()
+		return chunks, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout en attendant les chunks")
+	}
+}
+
+// HandleFileChunk traite un chunk de fichier reçu
+func (a *Agent) HandleFileChunk(msg *common.Message) {
+	if msg.ID == "" {
+		return
+	}
+
+	a.mu.RLock()
+	session, exists := a.downloads[msg.ID]
+	a.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	// Extraire le chunk depuis les données
+	var chunk *common.FileChunk
+	switch data := msg.Data.(type) {
+	case *common.FileChunk:
+		chunk = data
+	case map[string]interface{}:
+		chunk = &common.FileChunk{}
+		if pathVal, exists := data["path"]; exists {
+			if pathStr, ok := pathVal.(string); ok {
+				chunk.Path = pathStr
+			}
+		}
+		if offsetVal, exists := data["offset"]; exists {
+			if offsetFloat, ok := offsetVal.(float64); ok {
+				chunk.Offset = int64(offsetFloat)
+			}
+		}
+		if dataVal, exists := data["data"]; exists {
+			if dataStr, ok := dataVal.(string); ok {
+				// Décoder base64
+				decoded, err := base64.StdEncoding.DecodeString(dataStr)
+				if err == nil {
+					chunk.Data = decoded
+				}
+			} else if dataArray, ok := dataVal.([]interface{}); ok {
+				chunk.Data = make([]byte, len(dataArray))
+				for j, v := range dataArray {
+					if byteVal, ok := v.(float64); ok {
+						chunk.Data[j] = byte(byteVal)
+					}
+				}
+			}
+		}
+		if isLastVal, exists := data["is_last"]; exists {
+			if isLastBool, ok := isLastVal.(bool); ok {
+				chunk.IsLast = isLastBool
+			}
+		}
+	default:
+		return
+	}
+
+	if chunk == nil {
+		return
+	}
+
+	// Ajouter le chunk à la session
+	session.mu.Lock()
+	session.Chunks = append(session.Chunks, chunk)
+	session.mu.Unlock()
+}
+
+// HandleFileComplete traite la fin d'un téléchargement
+func (a *Agent) HandleFileComplete(msg *common.Message) {
+	if msg.ID == "" {
+		return
+	}
+
+	a.mu.RLock()
+	session, exists := a.downloads[msg.ID]
+	a.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	// Signaliser que le téléchargement est terminé
+	select {
+	case session.Done <- true:
+	default:
+	}
+}
+
+// HandleFileError traite une erreur de téléchargement
+func (a *Agent) HandleFileError(msg *common.Message) {
+	if msg.ID == "" {
+		return
+	}
+
+	a.mu.RLock()
+	session, exists := a.downloads[msg.ID]
+	a.mu.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	// Extraire le message d'erreur
+	var errorMsg string
+	if errorData, ok := msg.Data.(*common.ErrorData); ok {
+		errorMsg = errorData.Message
+	} else if errorMap, ok := msg.Data.(map[string]interface{}); ok {
+		if msgVal, exists := errorMap["message"]; exists {
+			if msgStr, ok := msgVal.(string); ok {
+				errorMsg = msgStr
+			}
+		}
+	}
+	if errorMsg == "" {
+		errorMsg = "erreur inconnue"
+	}
+
+	session.mu.Lock()
+	session.Error = fmt.Errorf(errorMsg)
+	session.mu.Unlock()
+
+	// Signaliser que le téléchargement est terminé (avec erreur)
+	select {
+	case session.Done <- true:
+	default:
 	}
 }
 

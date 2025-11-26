@@ -163,6 +163,9 @@ func (ws *WebSocketServer) handleMessage(conn WebSocketConn, msg *common.Message
 	case common.MessageTypeFileCreateDir:
 		return ws.handleFileCreateDir(conn, msg, agent)
 
+	case common.MessageTypeFileChunk:
+		return ws.handleFileChunk(conn, msg, agent)
+
 	case common.MessageTypeFileComplete:
 		return ws.handleFileComplete(conn, msg, agent)
 
@@ -373,6 +376,17 @@ func (ws *WebSocketServer) handleFileDownload(conn WebSocketConn, msg *common.Me
 	return (*agent).SendMessage(msg)
 }
 
+// handleFileChunk traite un chunk de fichier reçu de l'agent
+func (ws *WebSocketServer) handleFileChunk(conn WebSocketConn, msg *common.Message, agent **Agent) error {
+	if *agent == nil {
+		return nil // Ignorer si ce n'est pas un agent
+	}
+
+	(*agent).UpdateLastSeen()
+	(*agent).HandleFileChunk(msg)
+	return nil
+}
+
 // handleFileDelete traite la suppression de fichier
 func (ws *WebSocketServer) handleFileDelete(conn WebSocketConn, msg *common.Message, agent **Agent) error {
 	if *agent == nil {
@@ -407,6 +421,8 @@ func (ws *WebSocketServer) handleFileComplete(conn WebSocketConn, msg *common.Me
 	if msg.ID != "" {
 		log.Printf("[WS] handleFileComplete - Routage de la réponse, ID: %s", msg.ID)
 		(*agent).HandleResponse(msg)
+		// Aussi gérer comme fin de téléchargement
+		(*agent).HandleFileComplete(msg)
 	}
 
 	return nil
@@ -424,6 +440,8 @@ func (ws *WebSocketServer) handleFileError(conn WebSocketConn, msg *common.Messa
 	if msg.ID != "" {
 		log.Printf("[WS] handleFileError - Routage de l'erreur, ID: %s", msg.ID)
 		(*agent).HandleResponse(msg)
+		// Aussi gérer comme erreur de téléchargement
+		(*agent).HandleFileError(msg)
 	}
 
 	return nil

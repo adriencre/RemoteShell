@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -971,16 +972,57 @@ func (api *APIServer) downloadFile(c *gin.Context) {
 	msg := common.NewMessage(common.MessageTypeFileDownload, fileData)
 	msg.AgentID = agentID
 
-	// Envoyer la demande à l'agent
-	if err := agent.SendMessage(msg); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "erreur d'envoi de la demande"})
+	log.Printf("[API] downloadFile - Envoi de la demande de téléchargement pour %s à l'agent %s, ID message: %s", path, agentID, msg.ID)
+
+	// Envoyer la demande et collecter tous les chunks
+	chunks, err := agent.SendMessageWithDownload(msg, 30*time.Second)
+	if err != nil {
+		log.Printf("[API] downloadFile - Erreur lors du téléchargement: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("erreur de téléchargement: %v", err)})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "demande de téléchargement envoyée",
-		"path":    path,
+	if len(chunks) == 0 {
+		log.Printf("[API] downloadFile - Aucun chunk reçu")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "aucun chunk reçu"})
+		return
+	}
+
+	log.Printf("[API] downloadFile - %d chunks reçus, assemblage du fichier", len(chunks))
+
+	// Trier les chunks par offset pour s'assurer qu'ils sont dans le bon ordre
+	// Utiliser sort.Slice pour un tri plus efficace
+	sort.Slice(chunks, func(i, j int) bool {
+		return chunks[i].Offset < chunks[j].Offset
 	})
+
+	// Calculer la taille totale du fichier
+	var totalSize int64
+	for _, chunk := range chunks {
+		totalSize += int64(len(chunk.Data))
+	}
+
+	// Assembler tous les chunks en un seul buffer
+	fileDataBytes := make([]byte, 0, totalSize)
+	for _, chunk := range chunks {
+		fileDataBytes = append(fileDataBytes, chunk.Data...)
+	}
+
+	log.Printf("[API] downloadFile - Fichier assemblé, taille: %d bytes", len(fileDataBytes))
+
+	// Extraire le nom du fichier depuis le chemin
+	fileName := path
+	if lastSlash := strings.LastIndex(path, "/"); lastSlash >= 0 && lastSlash < len(path)-1 {
+		fileName = path[lastSlash+1:]
+	}
+
+	// Définir les en-têtes pour le téléchargement
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", fileName))
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Length", fmt.Sprintf("%d", len(fileDataBytes)))
+
+	// Envoyer les données binaires
+	c.Data(http.StatusOK, "application/octet-stream", fileDataBytes)
 }
 
 // deleteFile supprime un fichier sur un agent
