@@ -81,6 +81,13 @@ func (api *APIServer) setupRoutes() {
 		c.Next()
 	})
 
+	// Empêcher le référencement par les moteurs de recherche (plus fiable que robots.txt seul)
+	api.router.Use(func(c *gin.Context) {
+		// "noindex" bloque l'indexation, même si un robot ignore robots.txt
+		c.Header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet")
+		c.Next()
+	})
+
 	// Routes publiques
 	api.router.GET("/health", api.healthCheck)
 	api.router.GET("/api/database/info", api.getDatabaseInfo)
@@ -132,6 +139,7 @@ func (api *APIServer) setupRoutes() {
 
 	// Servir les fichiers statiques (interface web)
 	api.router.Static("/assets", "./build/web/assets")
+	api.router.StaticFile("/robots.txt", "./build/web/robots.txt")
 	api.router.StaticFile("/", "./build/web/index.html")
 
 	// Rediriger toutes les routes non-API vers index.html (pour React Router)
