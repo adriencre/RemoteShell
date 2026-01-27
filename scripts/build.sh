@@ -102,7 +102,8 @@ build_web() {
     mkdir -p ../$BUILD_DIR/web
     
     # Copier les fichiers buildés
-    cp -r dist/* ../$BUILD_DIR/web/
+    # IMPORTANT: inclure aussi les dotfiles (.htaccess, etc.)
+    cp -a dist/. ../$BUILD_DIR/web/
     
     cd ..
     success "Interface web buildée avec succès"
