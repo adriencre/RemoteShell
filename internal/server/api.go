@@ -140,6 +140,7 @@ func (api *APIServer) setupRoutes() {
 	// Servir les fichiers statiques (interface web)
 	api.router.Static("/assets", "./build/web/assets")
 	api.router.StaticFile("/robots.txt", "./build/web/robots.txt")
+	api.router.StaticFile("/rms.jpg", "./build/web/rms.jpg")
 	api.router.StaticFile("/", "./build/web/index.html")
 
 	// Rediriger toutes les routes non-API vers index.html (pour React Router)
