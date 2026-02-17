@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -93,6 +94,7 @@ func (api *APIServer) setupRoutes() {
 	api.router.GET("/api/database/info", api.getDatabaseInfo)
 	api.router.GET("/download/agent", api.downloadAgent)
 	api.router.GET("/download/install-agent.sh", api.downloadInstallScript)
+	api.router.GET("/download/gcpwstandaloneenterprise64.exe", api.downloadGCPWStandalone)
 
 	// Routes OAuth2/Authentik
 	if api.oauth2Config != nil {
@@ -353,6 +355,58 @@ func (api *APIServer) downloadAgent(c *gin.Context) {
 
 	// Servir le fichier
 	c.File(agentPath)
+}
+
+// downloadGCPWStandalone sert le fichier gcpwstandaloneenterprise64.exe pour téléchargement
+func (api *APIServer) downloadGCPWStandalone(c *gin.Context) {
+	const filename = "gcpwstandaloneenterprise64.exe"
+
+	// Obtenir le répertoire de travail actuel
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = "."
+	}
+
+	possiblePaths := []string{
+		// Chemins relatifs
+		"./" + filename,
+		"./web/public/" + filename,
+		"./build/web/" + filename,
+		// Chemins absolus basés sur le workdir
+		filepath.Join(workDir, filename),
+		filepath.Join(workDir, "web", "public", filename),
+		filepath.Join(workDir, "build", "web", filename),
+		// Chemins Docker probables
+		"/app/" + filename,
+		"/app/web/public/" + filename,
+		"/app/build/web/" + filename,
+	}
+
+	var exePath string
+	for _, p := range possiblePaths {
+		fi, statErr := os.Stat(p)
+		if statErr == nil && !fi.IsDir() {
+			exePath = p
+			log.Printf("[API] downloadGCPWStandalone - ✅ Fichier trouvé: %s (taille: %d bytes)", exePath, fi.Size())
+			break
+		}
+	}
+
+	if exePath == "" {
+		log.Printf("[API] downloadGCPWStandalone - ❌ Fichier non trouvé. Répertoire de travail: %s", workDir)
+		log.Printf("[API] downloadGCPWStandalone - Chemins testés: %v", possiblePaths)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "fichier non trouvé",
+			"file":  filename,
+			"hint":  "Placez le fichier dans ./web/public/ ou dans le répertoire de travail du serveur, puis redémarrez si nécessaire.",
+		})
+		return
+	}
+
+	// Définir les en-têtes pour forcer le téléchargement
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Type", "application/octet-stream")
+	c.File(exePath)
 }
 
 // downloadInstallScript sert le script d'installation de l'agent
