@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"sync"
 
 	"remoteshell/internal/common"
 
@@ -17,6 +18,12 @@ import (
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+// Cache global pour limiter les écritures répétitives en base de données
+var (
+	agentThrottleMap = make(map[string]time.Time)
+	throttleMutex    sync.Mutex
+)
 
 // Database gère la base de données
 type Database struct {
@@ -130,7 +137,7 @@ func (SystemLog) TableName() string {
 func NewDatabase(config *common.Config) (*Database, error) {
 	// Configuration GORM
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Warn), // Désactive le log de chaque requête pour gagner en performance
 	}
 
 	var db *gorm.DB
@@ -198,25 +205,30 @@ func (d *Database) Close() error {
 
 // SaveAgent sauvegarde ou met à jour un agent
 func (d *Database) SaveAgent(agent *AgentRecord) error {
-	// Vérifier si l'agent existe déjà
-	var existing AgentRecord
-	err := d.db.Where("id = ?", agent.ID).First(&existing).Error
+	throttleMutex.Lock()
+	lastUpdate, exists := agentThrottleMap[agent.ID]
 	
-	if err == nil {
-		// L'agent existe, faire une mise à jour en excluant CreatedAt
-		// Utiliser Updates pour ne mettre à jour que les champs spécifiés
-		return d.db.Model(agent).Omit("created_at").Updates(agent).Error
-	} else if err == gorm.ErrRecordNotFound {
-		// L'agent n'existe pas, créer un nouvel enregistrement
-		// S'assurer que CreatedAt est défini si c'est zéro
+	// Si l'agent est déjà "online" et a été mis à jour il y a moins de 5 minutes,
+	// on ignore l'écriture en base pour éviter de spammer le disque et le réseau.
+	// On laisse passer si le statut n'est pas "online" (ex: première connexion ou déconnexion).
+	if exists && agent.Status == "online" && time.Since(lastUpdate) < 5*time.Minute {
+		throttleMutex.Unlock()
+		return nil
+	}
+	
+	agentThrottleMap[agent.ID] = time.Now()
+	throttleMutex.Unlock()
+
+	// On tente une mise à jour directe. Si aucune ligne n'est affectée, on crée l'enregistrement.
+	// C'est beaucoup plus performant qu'un SELECT suivi d'un UPDATE.
+	result := d.db.Model(agent).Where("id = ?", agent.ID).Omit("created_at").Updates(agent)
+	if result.Error == nil && result.RowsAffected == 0 {
 		if agent.CreatedAt.IsZero() {
 			agent.CreatedAt = time.Now()
 		}
 		return d.db.Create(agent).Error
-	} else {
-		// Autre erreur
-		return err
 	}
+	return result.Error
 }
 
 // GetAgent récupère un agent par son ID

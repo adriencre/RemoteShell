@@ -103,7 +103,7 @@ User=root
 WorkingDirectory=${WORK_DIR}
 ExecStart=${BIN_PATH} --server ${SERVER_URL} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN}
 Restart=always
-RestartSec=10
+RestartSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -248,4 +248,3 @@ case "${1:-install}" in
         exit 1
         ;;
 esac
-

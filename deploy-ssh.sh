@@ -185,7 +185,7 @@ Type=simple
 User=root
 ExecStart=/usr/local/bin/rms-agent --server $SERVER_URL --id "$AGENT_ID" --name "$AGENT_NAME" --token "$TOKEN"
 Restart=always
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
@@ -251,6 +251,3 @@ echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}✅ Déploiement terminé !${NC}"
 echo ""
-
-
-

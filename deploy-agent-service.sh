@@ -141,7 +141,7 @@ Type=simple
 User=root
 ExecStart=INSTALL_DIR_PLACEHOLDER/rms-agent --server SERVER_URL_PLACEHOLDER --id "AGENT_ID_PLACEHOLDER" --name "AGENT_NAME_PLACEHOLDER" --token "TOKEN_PLACEHOLDER"
 Restart=always
-RestartSec=10
+RestartSec=30
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=rms-agent
@@ -213,4 +213,3 @@ else
     echo -e "${RED}❌ Erreur lors de l installation du service${NC}"
     exit 1
 fi
-

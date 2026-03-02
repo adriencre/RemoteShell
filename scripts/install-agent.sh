@@ -512,7 +512,7 @@ User=root
 WorkingDirectory=/opt/remoteshell
 ExecStart=${INSTALL_DIR}/rms-agent --server ${SERVER_HOST_PORT} --id "${AGENT_ID}" --name "${AGENT_NAME}" --token ${AUTH_TOKEN} ${USE_TLS}
 Restart=always
-RestartSec=10
+RestartSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -559,4 +559,3 @@ echo ""
 echo "📝 Configuration sauvegardée dans: /etc/remoteshell/agent.conf"
 echo "🔗 L'agent devrait maintenant apparaître dans l'interface web"
 echo ""
-
