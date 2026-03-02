@@ -613,6 +613,18 @@ func (ws *WebSocketServer) handleHeartbeat(conn WebSocketConn, msg *common.Messa
 	// Mettre à jour le timestamp
 	(*agent).UpdateLastSeen()
 
+	// Mettre à jour la base de données (sera limité par le throttle de 5 min dans SaveAgent)
+	if ws.hub.db != nil {
+		agentRecord := &AgentRecord{
+			ID:        (*agent).ID,
+			Name:      (*agent).Name,
+			LastSeen:  (*agent).LastSeen,
+			Status:    "online",
+			UpdatedAt: time.Now(),
+		}
+		ws.hub.db.SaveAgent(agentRecord)
+	}
+
 	// Répondre au heartbeat (sans log pour éviter la pollution)
 	response := common.NewMessage(common.MessageTypeHeartbeat, nil)
 	return conn.SendMessage(response)
